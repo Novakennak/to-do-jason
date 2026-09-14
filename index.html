@@ -157,6 +157,7 @@
     <h1>To-Do&#39;s Jason</h1>
     <div class="meta">
       <span class="count" id="count"></span>
+      <span class="count" id="sync"></span>
       <button type="button" class="clear" id="clear" data-act="askClear" hidden>Afgevinkte taken verwijderen</button>
     </div>
   </header>
@@ -181,7 +182,18 @@
 (function(){
   "use strict";
 
+  /* ================== INSTELLINGEN ==================
+     Vul deze drie regels in om de lijst ook in Supabase te bewaren.
+     Laat ze leeg en de app werkt precies zoals hiervoor, alleen op de telefoon. */
+  var CLOUD = {
+    url:  "https://xtlwrppyuexpvzgykoli.supabase.co/rest/v1/",   // bijv. https://abcdefgh.supabase.co
+    key:  "sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw",   // de publishable / anon key uit Supabase
+    list: "01c75fe4-5f7c-4adb-834c-00a9b295ffa9"    // je eigen geheime lijstsleutel, bijv. een uuid
+  };
+  /* ================================================== */
+
   var KEY       = "todo-jason-v1";
+  var STAMP     = "todo-jason-stamp";
   var BACKUP    = "todo-jason-backup";
   var MAX_DEPTH = 3;     // hoofdtaak > subtaak > sub-subtaak, dieper kan niet
   var MAX_TEXT  = 500;
@@ -192,6 +204,9 @@
   var mem   = null;      // vangnet als de browser niets mag opslaan
   var undoState = null;
   var undoTimer = null;
+  var stamp     = 0;       // wanneer de lijst voor het laatst is gewijzigd
+  var pending   = false;   // nog niet naar Supabase gestuurd
+  var pushTimer = null;
 
   /* ---------- hulpjes die nooit mogen omvallen ---------- */
   function safe(fn, fallback){
@@ -259,19 +274,23 @@
       }
     }
     items = clean(parsed, 1, {});
+    stamp = safe(function(){ return parseInt(localStorage.getItem(STAMP), 10) || 0; }, 0);
   }
 
-  function save(){
+  function save(push){
     mem = items;
     var text = safe(function(){ return JSON.stringify(items); }, null);
     if(text === null) return;
+    if(push !== false) stamp = Date.now();
     var ok = safe(function(){
       var prev = localStorage.getItem(KEY);
       if(prev) localStorage.setItem(BACKUP, prev);     // vorige goede versie achter de hand
       localStorage.setItem(KEY, text);
+      localStorage.setItem(STAMP, String(stamp));
       return true;
     }, false);
     if(!ok) notice("De lijst kon niet opgeslagen worden. Maak ruimte vrij op de telefoon en probeer het opnieuw.");
+    if(push !== false) queuePush();
   }
 
   /* ---------- zoeken en sorteren ---------- */
@@ -559,8 +578,10 @@
     else save();
   }
   document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "hidden") stash();
+    if(document.visibilityState === "hidden"){ stash(); if(pending) push(true); }
+    else pull();
   });
+  window.addEventListener("online", function(){ if(pending) push(); else pull(); });
   window.addEventListener("pagehide", stash);
 
   // tweede venster open: overnemen in plaats van overschrijven
@@ -574,6 +595,72 @@
   window.addEventListener("error", function(){
     notice("Er ging iets mis. Je lijst is bewaard.", {act:"reload", label:"Opnieuw laden"});
   });
+
+  /* ---------- kopie in Supabase ---------- */
+  function cloudOn(){
+    return !!(CLOUD.url && CLOUD.key && CLOUD.list && typeof fetch === "function");
+  }
+  function syncStatus(){
+    var el = document.getElementById("sync");
+    if(el) el.textContent = (cloudOn() && pending) ? "nog niet opgeslagen in de cloud" : "";
+  }
+  function rpc(name, body, keepalive){
+    return fetch(CLOUD.url.replace(/\/+$/, "") + "/rest/v1/rpc/" + name, {
+      method: "POST",
+      keepalive: !!keepalive,
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": CLOUD.key,
+        "Authorization": "Bearer " + CLOUD.key
+      },
+      body: JSON.stringify(body)
+    }).then(function(res){
+      if(!res.ok) throw new Error("status " + res.status);
+      return res.json();
+    });
+  }
+  function pull(){
+    if(!cloudOn()) return;
+    safe(function(){
+      rpc("get_list", {p_key: CLOUD.list}).then(function(rows){
+        var row = Array.isArray(rows) ? rows[0] : rows;
+        var when = row && row.updated_at ? Date.parse(row.updated_at) : 0;
+        if(row && when > stamp){
+          items = clean(row.data, 1, {});      // de cloud is nieuwer
+          stamp = when;
+          save(false);
+          render();
+          pending = false;
+          syncStatus();
+        }else if(pending || !row || when < stamp){
+          push();                               // deze telefoon is nieuwer
+        }
+      }).catch(function(){ syncStatus(); });
+    });
+  }
+  function push(keepalive){
+    if(!cloudOn()) return;
+    safe(function(){
+      rpc("save_list", {
+        p_key: CLOUD.list,
+        p_data: items,
+        p_updated: new Date(stamp || Date.now()).toISOString()
+      }, keepalive).then(function(){
+        pending = false;
+        syncStatus();
+      }).catch(function(){
+        pending = true;
+        syncStatus();
+      });
+    });
+  }
+  function queuePush(){
+    if(!cloudOn()) return;
+    pending = true;
+    syncStatus();
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(function(){ push(); }, 1200);   // even wachten, niet bij elke tik sturen
+  }
 
   /* ---------- opslag beschermen en offline werken ---------- */
   safe(function(){ navigator.storage.persist(); });
@@ -591,6 +678,8 @@
 
   load();
   render();
+  syncStatus();
+  pull();
 })();
 </script>
 </body>
