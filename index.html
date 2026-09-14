@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FBF1BE">
+<meta name="color-scheme" content="light only">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="To-Do's Jason">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>To-Do's Jason</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23FBF1BE'/%3E%3Cpath d='M18 33l9 9 19-21' stroke='%235C6B2E' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root{
+    color-scheme:light only;
+    --paper:#FBF1BE;
+    --ink:#2A2718;
+    --ink-soft:#7C7554;
+    --rule:#E0CE84;
+    --check:#5C6B2E;
+    --warn:#8A3E22;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;background:var(--paper)}
+  body{
+    color:var(--ink);
+    font-family:Roboto,-apple-system,"Segoe UI",system-ui,sans-serif;
+    font-size:17px;
+    line-height:1.4;
+    padding:0 0 calc(72px + env(safe-area-inset-bottom));
+    -webkit-text-size-adjust:100%;
+    overflow-wrap:anywhere;
+  }
+  button,input{touch-action:manipulation}
+  .wrap{max-width:640px;margin:0 auto;padding:0 14px}
+
+  header{padding:26px 0 12px;position:sticky;top:0;background:var(--paper);z-index:5}
+  h1{margin:0;font-size:30px;font-weight:500;letter-spacing:-.015em}
+  .meta{display:flex;align-items:baseline;gap:14px;margin-top:6px;min-height:22px}
+  .count{font-size:14px;color:var(--ink-soft)}
+  .clear{
+    background:none;border:0;padding:2px 0;font:inherit;font-size:14px;
+    color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;cursor:pointer;
+  }
+  .clear[hidden]{display:none}
+
+  .notice{
+    margin:0 0 14px;padding:12px 14px;border-left:3px solid var(--warn);
+    background:rgba(138,62,34,.07);color:var(--warn);font-size:15px;border-radius:0 6px 6px 0;
+  }
+  .notice[hidden]{display:none}
+  .notice button{
+    display:block;margin-top:6px;border:0;background:none;padding:0;font:inherit;
+    color:var(--warn);text-decoration:underline;text-underline-offset:3px;cursor:pointer;
+  }
+
+  ul{list-style:none;margin:0;padding:0}
+  .kids{margin-left:18px;padding-left:14px;border-left:1px solid var(--rule)}
+  .kids .kids{margin-left:10px;padding-left:12px}
+
+  .row{display:flex;align-items:flex-start;transition:transform .28s cubic-bezier(.2,.7,.3,1)}
+  .row.flip{transition:none}
+
+  .box{
+    flex:0 0 auto;width:42px;height:44px;border:0;background:none;padding:0;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+  }
+  .box span{
+    width:21px;height:21px;border:2px solid var(--ink-soft);border-radius:6px;
+    display:block;position:relative;transition:border-color .15s,background-color .15s;
+  }
+  .box span::after{
+    content:"";position:absolute;left:5px;top:1px;width:6px;height:11px;
+    border:solid var(--paper);border-width:0 2.5px 2.5px 0;transform:rotate(42deg) scale(.4);
+    opacity:0;transition:opacity .12s,transform .12s;
+  }
+  .done > .box span{background:var(--check);border-color:var(--check)}
+  .done > .box span::after{opacity:1;transform:rotate(42deg) scale(1)}
+
+  .text{
+    flex:1 1 auto;min-width:0;padding:11px 4px;border:0;background:none;font:inherit;
+    color:inherit;text-align:left;cursor:text;
+  }
+  .depth2 > .text{font-size:16px}
+  .depth3 > .text{font-size:15px}
+  .done > .text{color:var(--ink-soft);text-decoration:line-through;text-decoration-thickness:1px}
+
+  .sub{
+    flex:0 0 auto;width:38px;height:44px;border:0;background:none;padding:0;cursor:pointer;
+    color:var(--ink-soft);font-size:21px;line-height:1;opacity:.5;
+  }
+
+  .edit{display:flex;align-items:center;gap:6px;padding:4px 0 4px 42px}
+  .kids .edit{padding-left:0}
+  input[type=text]{
+    flex:1 1 auto;min-width:0;font:inherit;color:var(--ink);
+    background:rgba(255,255,255,.55);border:0;border-bottom:2px solid var(--check);
+    border-radius:4px 4px 0 0;padding:8px 10px;outline:none;
+  }
+  .btn{
+    flex:0 0 auto;border:0;background:none;font:inherit;font-size:15px;padding:10px 6px;
+    color:var(--check);cursor:pointer;
+  }
+  .btn.danger{color:var(--warn)}
+
+  .add{
+    display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;
+    font:inherit;color:var(--ink-soft);padding:14px 0 14px 10px;cursor:pointer;text-align:left;
+  }
+  .add .plus{font-size:20px;line-height:1}
+
+  .empty{padding:36px 8px;color:var(--ink-soft);border-top:1px solid var(--rule)}
+  .empty p{margin:0 0 6px}
+
+  .undo{
+    position:fixed;left:50%;transform:translateX(-50%);
+    bottom:calc(16px + env(safe-area-inset-bottom));
+    z-index:20;display:flex;align-items:center;gap:16px;
+    max-width:min(560px,calc(100vw - 28px));
+    padding:12px 16px;border-radius:10px;
+    background:#2A2718;color:#F7EFC9;font-size:15px;
+    box-shadow:0 6px 20px rgba(42,39,24,.28);
+  }
+  .undo[hidden]{display:none}
+  .undo span{flex:1 1 auto}
+  .undo button{
+    flex:0 0 auto;border:0;background:none;font:inherit;color:#D9E08A;padding:4px 2px;cursor:pointer;
+  }
+
+  .sheet{
+    position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
+    padding:20px;background:rgba(42,39,24,.42);
+  }
+  .sheet[hidden]{display:none}
+  .sheet-card{
+    width:100%;max-width:420px;background:var(--paper);border-radius:14px;
+    padding:22px 20px 12px;box-shadow:0 12px 32px rgba(42,39,24,.3);
+  }
+  .sheet-card p{margin:0 0 18px;font-size:17px}
+  .sheet-acts{display:flex;justify-content:flex-end;gap:4px}
+  .sheet-acts button{
+    border:0;background:none;font:inherit;font-size:16px;padding:12px 14px;
+    border-radius:8px;color:var(--ink-soft);cursor:pointer;
+  }
+  .sheet-acts button.primary{color:var(--warn);font-weight:500}
+
+  button:focus-visible,input:focus-visible{outline:2px solid var(--check);outline-offset:2px}
+  @media (prefers-reduced-motion:reduce){.row{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>To-Do&#39;s Jason</h1>
+    <div class="meta">
+      <span class="count" id="count"></span>
+      <button type="button" class="clear" id="clear" data-act="askClear" hidden>Afgevinkte taken verwijderen</button>
+    </div>
+  </header>
+  <p class="notice" id="notice" hidden></p>
+  <main id="app"></main>
+</div>
+<div class="sheet" id="confirm" hidden>
+  <div class="sheet-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
+    <p id="confirmText"></p>
+    <div class="sheet-acts">
+      <button type="button" data-act="cancelClear" id="confirmNo">Annuleren</button>
+      <button type="button" class="primary" data-act="doClear">Verwijderen</button>
+    </div>
+  </div>
+</div>
+<div class="undo" id="undo" hidden>
+  <span id="undoText"></span>
+  <button type="button" data-act="undo">Ongedaan maken</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var KEY       = "todo-jason-v1";
+  var BACKUP    = "todo-jason-backup";
+  var MAX_DEPTH = 3;     // hoofdtaak > subtaak > sub-subtaak, dieper kan niet
+  var MAX_TEXT  = 500;
+
+  var items = [];
+  var edit  = null;      // {id} bestaande taak aanpassen
+  var add   = null;      // {parent: null | id} nieuwe taak
+  var mem   = null;      // vangnet als de browser niets mag opslaan
+  var undoState = null;
+  var undoTimer = null;
+
+  /* ---------- hulpjes die nooit mogen omvallen ---------- */
+  function safe(fn, fallback){
+    try{ return fn(); }catch(e){ return fallback; }
+  }
+  function uid(){
+    return Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+  }
+  function esc(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];
+    });
+  }
+  function notice(msg, action){
+    var el = document.getElementById("notice");
+    if(!el) return;
+    el.innerHTML = esc(msg) + (action ? '<button type="button" data-act="'+action.act+'">'+esc(action.label)+'</button>' : "");
+    el.hidden = false;
+  }
+
+  /* ---------- alles wat binnenkomt kan rommel zijn ---------- */
+  function clean(list, depth, seen){
+    var out = [];
+    if(!Array.isArray(list)) return out;
+    list.forEach(function(raw){
+      if(!raw || typeof raw !== "object") return;                  // null, tekst, getal
+      var text = typeof raw.text === "string" ? raw.text.slice(0, MAX_TEXT).trim() : "";
+      if(!text) return;                                            // taak zonder tekst
+      var id = (typeof raw.id === "string" && raw.id && !seen[raw.id]) ? raw.id : uid();
+      seen[id] = true;
+      var kids = clean(raw.children, depth + 1, seen);
+      var node = {id:id, text:text, done: raw.done === true, children: []};
+      out.push(node);
+      if(depth < MAX_DEPTH) node.children = kids;
+      else if(kids.length) out.push.apply(out, kids);              // te diep: zelfde niveau
+    });
+    return out;
+  }
+
+  /* ---------- opslag ---------- */
+  function storageWorks(){
+    return safe(function(){
+      localStorage.setItem("__test__", "1");
+      localStorage.removeItem("__test__");
+      return true;
+    }, false);
+  }
+
+  function load(){
+    if(!storageWorks()){
+      items = mem || [];
+      notice("Deze browser mag niets opslaan, dus de lijst verdwijnt als je hem sluit. Zet het blokkeren van site-gegevens uit voor deze pagina.");
+      return;
+    }
+    var raw = safe(function(){ return localStorage.getItem(KEY); }, null);
+    var parsed = null;
+    if(raw){
+      parsed = safe(function(){ return JSON.parse(raw); }, null);
+      if(parsed === null){
+        safe(function(){ localStorage.setItem("todo-jason-kapot", raw); });     // bewaren, niet weggooien
+        var back = safe(function(){ return JSON.parse(localStorage.getItem(BACKUP)); }, null);
+        parsed = back;
+        notice(back ? "De lijst was beschadigd. De laatst bewaarde versie staat er weer."
+                    : "De lijst kon niet gelezen worden en is opnieuw begonnen.");
+      }
+    }
+    items = clean(parsed, 1, {});
+  }
+
+  function save(){
+    mem = items;
+    var text = safe(function(){ return JSON.stringify(items); }, null);
+    if(text === null) return;
+    var ok = safe(function(){
+      var prev = localStorage.getItem(KEY);
+      if(prev) localStorage.setItem(BACKUP, prev);     // vorige goede versie achter de hand
+      localStorage.setItem(KEY, text);
+      return true;
+    }, false);
+    if(!ok) notice("De lijst kon niet opgeslagen worden. Maak ruimte vrij op de telefoon en probeer het opnieuw.");
+  }
+
+  /* ---------- zoeken en sorteren ---------- */
+  function find(id, list, depth){
+    list = list || items; depth = depth || 1;
+    for(var i = 0; i < list.length; i++){
+      if(list[i].id === id) return {list:list, index:i, item:list[i], depth:depth};
+      var hit = find(id, list[i].children, depth + 1);
+      if(hit) return hit;
+    }
+    return null;
+  }
+  function each(list, fn){
+    list.forEach(function(it){ fn(it); each(it.children, fn); });
+  }
+  function reposition(list, index){
+    var it = list.splice(index, 1)[0];
+    if(it.done){ list.push(it); return; }
+    var pos = 0;
+    while(pos < list.length && !list[pos].done) pos++;
+    list.splice(pos, 0, it);
+  }
+  function insertOpen(list, node){
+    var pos = 0;
+    while(pos < list.length && !list[pos].done) pos++;
+    list.splice(pos, 0, node);
+  }
+
+  /* ---------- tekenen ---------- */
+  function editorHTML(value, label){
+    return '<input type="text" id="editor" maxlength="'+MAX_TEXT+'" value="'+esc(value || "")+'"'
+         + ' placeholder="'+esc(label)+'" enterkeyhint="done" autocapitalize="sentences"'
+         + ' autocomplete="off">';
+  }
+
+  function rowHTML(it, depth){
+    var canNest = depth < MAX_DEPTH;
+    var h = '<li class="node" data-id="'+esc(it.id)+'">';
+
+    if(edit && edit.id === it.id){
+      h += '<div class="edit">' + editorHTML(it.text, "")
+         +   '<button type="button" class="btn" data-act="save">Opslaan</button>'
+         +   '<button type="button" class="btn danger" data-act="del">Wissen</button>'
+         + '</div>';
+    }else{
+      h += '<div class="row depth'+depth+(it.done ? " done" : "")+'" data-row="'+esc(it.id)+'">'
+         +   '<button type="button" class="box" data-act="toggle" aria-label="Afvinken"><span></span></button>'
+         +   '<button type="button" class="text" data-act="edit">'+esc(it.text)+'</button>'
+         +   (canNest ? '<button type="button" class="sub" data-act="addchild" aria-label="Subtaak toevoegen">+</button>' : "")
+         + '</div>';
+    }
+
+    if(canNest){
+      var open = add && add.parent === it.id;
+      if(it.children.length || open){
+        h += '<ul class="kids">';
+        it.children.forEach(function(k){ h += rowHTML(k, depth + 1); });
+        if(open){
+          h += '<li class="edit">' + editorHTML("", depth === 1 ? "Subtaak" : "Sub-subtaak")
+             + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></li>';
+        }
+        h += '</ul>';
+      }
+    }
+    return h + '</li>';
+  }
+
+  function draw(){
+    var done = 0, total = 0;
+    each(items, function(it){ total++; if(it.done) done++; });
+
+    var h = '<ul>';
+    items.forEach(function(it){ h += rowHTML(it, 1); });
+    h += '</ul>';
+
+    if(!items.length && !(add && add.parent === null)){
+      h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik op <strong>Taak toevoegen</strong> om te beginnen.</p></div>';
+    }
+    if(add && add.parent === null){
+      h += '<div class="edit">' + editorHTML("", "Nieuwe taak")
+         + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></div>';
+    }else{
+      h += '<button type="button" class="add" data-act="addroot"><span class="plus">+</span>Taak toevoegen</button>';
+    }
+
+    document.getElementById("app").innerHTML = h;
+    document.getElementById("count").textContent = total ? done + " van " + total + " klaar" : "";
+    document.getElementById("clear").hidden = done === 0;
+
+    var ed = document.getElementById("editor");
+    if(ed){
+      safe(function(){ ed.focus(); ed.setSelectionRange(ed.value.length, ed.value.length); });
+      safe(function(){ ed.scrollIntoView({block:"center", behavior:"smooth"}); });
+    }
+  }
+
+  // loopt tekenen stuk, dan blijft de lijst staan en krijgt Jason een knop
+  function render(){
+    try{ draw(); }
+    catch(e){ notice("Er ging iets mis bij het tonen van de lijst.", {act:"reload", label:"Opnieuw laden"}); }
+  }
+
+  function reducedMotion(){
+    return safe(function(){ return window.matchMedia("(prefers-reduced-motion: reduce)").matches; }, false);
+  }
+
+  // opnieuw tekenen met een schuifbeweging, zodat je ziet waar een taak heen gaat
+  function renderMoving(change){
+    var before = {};
+    safe(function(){
+      document.querySelectorAll("[data-row]").forEach(function(el){
+        before[el.getAttribute("data-row")] = el.getBoundingClientRect().top;
+      });
+    });
+    change();
+    save();
+    render();
+    if(reducedMotion()) return;
+    safe(function(){
+      document.querySelectorAll("[data-row]").forEach(function(el){
+        var was = before[el.getAttribute("data-row")];
+        if(was === undefined) return;
+        var delta = was - el.getBoundingClientRect().top;
+        if(!delta) return;
+        el.classList.add("flip");
+        el.style.transform = "translateY(" + delta + "px)";
+        requestAnimationFrame(function(){
+          requestAnimationFrame(function(){
+            el.classList.remove("flip");
+            el.style.transform = "";
+          });
+        });
+      });
+    });
+  }
+
+  /* ---------- ongedaan maken ---------- */
+  function rememberFor(label){
+    var snap = safe(function(){ return JSON.stringify(items); }, null);
+    if(snap === null) return;
+    undoState = {data:snap};
+    var t = document.getElementById("undoText");
+    if(t) t.textContent = label;
+    var bar = document.getElementById("undo");
+    if(bar) bar.hidden = false;
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(hideUndo, 8000);
+  }
+  function hideUndo(){
+    undoState = null;
+    clearTimeout(undoTimer);
+    var bar = document.getElementById("undo");
+    if(bar) bar.hidden = true;
+  }
+  function doUndo(){
+    if(!undoState) return;
+    var back = safe(function(){ return JSON.parse(undoState.data); }, null);
+    if(back) items = clean(back, 1, {});
+    hideUndo();
+    save();
+    render();
+  }
+
+  /* ---------- bewerken ---------- */
+  function commitEdit(){
+    var ed = document.getElementById("editor");
+    if(!ed) return;
+    var val = String(ed.value || "").slice(0, MAX_TEXT).trim();
+
+    if(edit){
+      var f = find(edit.id);
+      if(f && val) f.item.text = val;
+      edit = null;
+    }else if(add){
+      if(val){
+        var node = {id:uid(), text:val, done:false, children:[]};
+        if(add.parent === null){
+          insertOpen(items, node);
+        }else{
+          var p = find(add.parent);
+          if(p && p.depth < MAX_DEPTH) insertOpen(p.item.children, node);
+          else add = null;
+        }
+      }else{
+        add = null;
+      }
+    }
+    save();
+    render();
+  }
+
+  /* ---------- klikken ---------- */
+  document.addEventListener("click", function(e){
+    if(e.target && e.target.id === "confirm"){ closeConfirm(); return; }   // naast het venster getikt
+    var btn = safe(function(){ return e.target.closest("[data-act]"); }, null);
+    if(!btn){
+      if(document.getElementById("editor") && !safe(function(){ return e.target.closest(".edit"); }, null)) commitEdit();
+      return;
+    }
+    var act = btn.getAttribute("data-act");
+    var li  = safe(function(){ return btn.closest(".node"); }, null);
+    var id  = li ? li.getAttribute("data-id") : null;
+    var f;
+
+    if(act === "undo"){ doUndo(); return; }
+    if(act === "askClear"){ commitEdit(); askClear(); return; }
+    if(act === "cancelClear"){ closeConfirm(); return; }
+    if(act === "doClear"){ closeConfirm(); clearDone(); return; }
+    if(act === "reload"){ safe(function(){ location.reload(); }); return; }
+
+    if(act === "toggle"){
+      renderMoving(function(){
+        var hit = find(id);
+        if(!hit) return;
+        hit.item.done = !hit.item.done;
+        each(hit.item.children, function(k){ k.done = hit.item.done; });   // subtaken gaan mee
+        reposition(hit.list, hit.index);
+      });
+      return;
+    }
+    if(act === "edit"){ commitEdit(); edit = {id:id}; add = null; render(); return; }
+    if(act === "save" || act === "saveNew"){ commitEdit(); return; }
+    if(act === "del"){
+      f = find(id);
+      if(f){
+        rememberFor(f.item.children.length ? "Taak met subtaken gewist" : "Taak gewist");
+        f.list.splice(f.index, 1);
+      }
+      edit = null; save(); render(); return;
+    }
+    if(act === "addchild"){ commitEdit(); add = {parent:id}; edit = null; render(); return; }
+    if(act === "addroot"){ commitEdit(); add = {parent:null}; edit = null; render(); return; }
+  });
+
+  document.addEventListener("keydown", function(e){
+    var sheet = document.getElementById("confirm");
+    if(sheet && !sheet.hidden){
+      if(e.key === "Escape"){ e.preventDefault(); closeConfirm(); }
+      return;
+    }
+    if(!e.target || e.target.id !== "editor") return;
+    if(e.key === "Enter"){ e.preventDefault(); commitEdit(); }
+    if(e.key === "Escape"){ edit = null; add = null; render(); }
+  });
+
+  function countDone(){
+    var n = 0;
+    each(items, function(it){ if(it.done) n++; });
+    return n;
+  }
+  function askClear(){
+    var n = countDone();
+    if(!n) return;
+    var el = document.getElementById("confirmText");
+    if(!el){ clearDone(); return; }                 // venster ontbreekt: dan maar zonder vraag
+    el.textContent = n === 1
+      ? "Deze afgevinkte taak verwijderen? Subtaken die eronder staan gaan mee."
+      : n + " afgevinkte taken verwijderen? Subtaken die eronder staan gaan mee.";
+    document.getElementById("confirm").hidden = false;
+    document.body.style.overflow = "hidden";
+    safe(function(){ document.getElementById("confirmNo").focus(); });
+  }
+  function closeConfirm(){
+    var el = document.getElementById("confirm");
+    if(el) el.hidden = true;
+    document.body.style.overflow = "";
+  }
+  function clearDone(){
+    if(!countDone()) return;
+    rememberFor("Afgevinkte taken verwijderd");
+    (function strip(list){
+      for(var i = list.length - 1; i >= 0; i--){
+        if(list[i].done) list.splice(i, 1);
+        else strip(list[i].children);
+      }
+    })(items);
+    save();
+    render();
+  }
+
+  /* ---------- niets kwijtraken als de app naar de achtergrond gaat ---------- */
+  function stash(){
+    closeConfirm();
+    if(document.getElementById("editor")) commitEdit();
+    else save();
+  }
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "hidden") stash();
+  });
+  window.addEventListener("pagehide", stash);
+
+  // tweede venster open: overnemen in plaats van overschrijven
+  window.addEventListener("storage", function(e){
+    if(e.key !== KEY || document.getElementById("editor")) return;
+    var next = safe(function(){ return JSON.parse(e.newValue); }, null);
+    if(next){ items = clean(next, 1, {}); render(); }
+  });
+
+  // laatste vangnet: liever een knop dan een wit scherm
+  window.addEventListener("error", function(){
+    notice("Er ging iets mis. Je lijst is bewaard.", {act:"reload", label:"Opnieuw laden"});
+  });
+
+  /* ---------- opslag beschermen en offline werken ---------- */
+  safe(function(){ navigator.storage.persist(); });
+  safe(function(){
+    if(!("serviceWorker" in navigator)) return;
+    window.addEventListener("load", function(){
+      navigator.serviceWorker.register("sw.js", {updateViaCache:"none"}).then(function(reg){
+        // bij elk openen kijken of er een nieuwere versie klaarstaat
+        document.addEventListener("visibilitychange", function(){
+          if(document.visibilityState === "visible") safe(function(){ reg.update(); });
+        });
+      }).catch(function(){});
+    });
+  });
+
+  load();
+  render();
+})();
+</script>
+</body>
+</html>
