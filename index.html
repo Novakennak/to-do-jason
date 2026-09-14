@@ -2,9 +2,10 @@
 <html lang="nl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#FBF1BE">
-<meta name="color-scheme" content="light only">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#FBF1BE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#221F18" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -15,13 +16,33 @@
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23FBF1BE'/%3E%3Cpath d='M18 33l9 9 19-21' stroke='%235C6B2E' stroke-width='7' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root{
-    color-scheme:light only;
+    color-scheme:light dark;
     --paper:#FBF1BE;
     --ink:#2A2718;
-    --ink-soft:#7C7554;
-    --rule:#E0CE84;
+    --ink-soft:#6B6545;
+    --rule:#CBB46A;
     --check:#5C6B2E;
     --warn:#8A3E22;
+    --press:rgba(42,39,24,.08);
+    --field:rgba(255,255,255,.55);
+    --bar:#2A2718;
+    --bar-ink:#F7EFC9;
+    --bar-act:#D9E08A;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#221F18;
+      --ink:#F3EBCB;
+      --ink-soft:#ABA488;
+      --rule:#4A4434;
+      --check:#B9C97E;
+      --warn:#E8A183;
+      --press:rgba(243,235,203,.1);
+      --field:rgba(255,255,255,.07);
+      --bar:#3A352A;
+      --bar-ink:#F3EBCB;
+      --bar-act:#C9D88E;
+    }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0;background:var(--paper)}
@@ -30,7 +51,7 @@
     font-family:Roboto,-apple-system,"Segoe UI",system-ui,sans-serif;
     font-size:17px;
     line-height:1.4;
-    padding:0 0 calc(72px + env(safe-area-inset-bottom));
+    padding:0 0 calc(104px + env(safe-area-inset-bottom));
     -webkit-text-size-adjust:100%;
     overflow-wrap:anywhere;
   }
@@ -39,8 +60,9 @@
 
   header{padding:26px 0 12px;position:sticky;top:0;background:var(--paper);z-index:5}
   h1{margin:0;font-size:30px;font-weight:500;letter-spacing:-.015em}
-  .meta{display:flex;align-items:baseline;gap:14px;margin-top:6px;min-height:22px}
+  .meta{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 14px;margin-top:6px;min-height:22px}
   .count{font-size:14px;color:var(--ink-soft)}
+  .clear:active{opacity:.6}
   .clear{
     background:none;border:0;padding:2px 0;font:inherit;font-size:14px;
     color:var(--ink-soft);text-decoration:underline;text-underline-offset:3px;cursor:pointer;
@@ -65,9 +87,10 @@
   .row.flip{transition:none}
 
   .box{
-    flex:0 0 auto;width:42px;height:44px;border:0;background:none;padding:0;
-    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    flex:0 0 auto;width:46px;height:48px;border:0;background:none;padding:0;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;border-radius:10px;
   }
+  .box:active{background:var(--press)}
   .box span{
     width:21px;height:21px;border:2px solid var(--ink-soft);border-radius:6px;
     display:block;position:relative;transition:border-color .15s,background-color .15s;
@@ -81,53 +104,72 @@
   .done > .box span::after{opacity:1;transform:rotate(42deg) scale(1)}
 
   .text{
-    flex:1 1 auto;min-width:0;padding:11px 4px;border:0;background:none;font:inherit;
-    color:inherit;text-align:left;cursor:text;
+    flex:1 1 auto;min-width:0;padding:13px 6px;border:0;background:none;font:inherit;
+    color:inherit;text-align:left;cursor:text;border-radius:8px;
   }
-  .depth2 > .text{font-size:16px}
-  .depth3 > .text{font-size:15px}
+  .text:active{background:var(--press)}
+  .depth2 > .text,.depth3 > .text{font-size:16px}
   .done > .text{color:var(--ink-soft);text-decoration:line-through;text-decoration-thickness:1px}
 
   .sub{
-    flex:0 0 auto;width:38px;height:44px;border:0;background:none;padding:0;cursor:pointer;
-    color:var(--ink-soft);font-size:21px;line-height:1;opacity:.5;
+    flex:0 0 auto;width:46px;height:48px;border:0;background:none;padding:0;cursor:pointer;
+    color:var(--check);font-size:24px;line-height:1;border-radius:10px;
   }
+  .sub:active{background:var(--press)}
 
-  .edit{display:flex;align-items:center;gap:6px;padding:4px 0 4px 42px}
+  .edit{display:flex;align-items:center;gap:6px;padding:4px 0 4px 46px}
   .kids .edit{padding-left:0}
+  .edit.open{flex-direction:column;align-items:stretch;gap:2px}
+  .edit-acts{display:flex;align-items:center;gap:2px}
+  .edit-acts .spacer{flex:1 1 auto}
+  .move{
+    border:0;background:none;font:inherit;font-size:20px;line-height:1;
+    width:48px;height:44px;border-radius:8px;color:var(--ink-soft);cursor:pointer;
+  }
+  .move:active{background:var(--press)}
+  .move[disabled]{opacity:.3}
   input[type=text]{
     flex:1 1 auto;min-width:0;font:inherit;color:var(--ink);
-    background:rgba(255,255,255,.55);border:0;border-bottom:2px solid var(--check);
+    background:var(--field);border:0;border-bottom:2px solid var(--check);
     border-radius:4px 4px 0 0;padding:8px 10px;outline:none;
   }
   .btn{
     flex:0 0 auto;border:0;background:none;font:inherit;font-size:15px;padding:10px 6px;
     color:var(--check);cursor:pointer;
   }
-  .btn.danger{color:var(--warn)}
+  .btn:active{background:var(--press);border-radius:8px}
+  .btn.danger{color:var(--warn);margin-left:10px}
 
   .add{
     display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;
-    font:inherit;color:var(--ink-soft);padding:14px 0 14px 10px;cursor:pointer;text-align:left;
+    font:inherit;color:var(--ink-soft);padding:15px 0 15px 10px;cursor:pointer;text-align:left;
+    border-radius:8px;
   }
+  .add:active{background:var(--press)}
   .add .plus{font-size:20px;line-height:1}
 
   .empty{padding:36px 8px;color:var(--ink-soft);border-top:1px solid var(--rule)}
   .empty p{margin:0 0 6px}
 
+  .fab{
+    position:fixed;right:16px;bottom:calc(18px + env(safe-area-inset-bottom));
+    width:60px;height:60px;border:0;border-radius:20px;z-index:25;
+    background:var(--check);color:var(--paper);font-size:32px;line-height:1;
+    box-shadow:0 6px 18px rgba(0,0,0,.25);cursor:pointer;
+  }
+  .fab:active{transform:scale(.94)}
   .undo{
-    position:fixed;left:50%;transform:translateX(-50%);
-    bottom:calc(16px + env(safe-area-inset-bottom));
-    z-index:20;display:flex;align-items:center;gap:16px;
-    max-width:min(560px,calc(100vw - 28px));
+    position:fixed;left:14px;right:88px;
+    bottom:calc(22px + env(safe-area-inset-bottom));
+    z-index:20;display:flex;align-items:center;gap:12px;
     padding:12px 16px;border-radius:10px;
-    background:#2A2718;color:#F7EFC9;font-size:15px;
+    background:var(--bar);color:var(--bar-ink);font-size:15px;
     box-shadow:0 6px 20px rgba(42,39,24,.28);
   }
   .undo[hidden]{display:none}
   .undo span{flex:1 1 auto}
   .undo button{
-    flex:0 0 auto;border:0;background:none;font:inherit;color:#D9E08A;padding:4px 2px;cursor:pointer;
+    flex:0 0 auto;border:0;background:none;font:inherit;color:var(--bar-act);padding:6px 4px;cursor:pointer;
   }
 
   .sheet{
@@ -137,7 +179,7 @@
   .sheet[hidden]{display:none}
   .sheet-card{
     width:100%;max-width:420px;background:var(--paper);border-radius:14px;
-    padding:22px 20px 12px;box-shadow:0 12px 32px rgba(42,39,24,.3);
+    padding:22px 20px 12px;box-shadow:0 12px 32px rgba(0,0,0,.32);
   }
   .sheet-card p{margin:0 0 18px;font-size:17px}
   .sheet-acts{display:flex;justify-content:flex-end;gap:4px}
@@ -164,6 +206,7 @@
   <p class="notice" id="notice" hidden></p>
   <main id="app"></main>
 </div>
+<button type="button" class="fab" id="fab" data-act="addroot" aria-label="Taak toevoegen">+</button>
 <div class="sheet" id="confirm" hidden>
   <div class="sheet-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
     <p id="confirmText"></p>
@@ -186,9 +229,9 @@
      Vul deze drie regels in om de lijst ook in Supabase te bewaren.
      Laat ze leeg en de app werkt precies zoals hiervoor, alleen op de telefoon. */
   var CLOUD = {
-    url:  "https://xtlwrppyuexpvzgykoli.supabase.co",   // bijv. https://abcdefgh.supabase.co
-    key:  "sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw",   // de publishable / anon key uit Supabase
-    list: "01c75fe4-5f7c-4adb-834c-00a9b295ffa9"    // je eigen geheime lijstsleutel, bijv. een uuid
+    url:  "",   // bijv. https://abcdefgh.supabase.co
+    key:  "",   // de publishable / anon key uit Supabase
+    list: ""    // je eigen geheime lijstsleutel, bijv. een uuid
   };
   /* ================================================== */
 
@@ -313,6 +356,26 @@
     while(pos < list.length && !list[pos].done) pos++;
     list.splice(pos, 0, it);
   }
+  // buurman met dezelfde status zoeken: open taken blijven boven, afgevinkte onder
+  function neighbour(id, dir){
+    var f = find(id);
+    if(!f) return null;
+    for(var i = f.index + dir; i >= 0 && i < f.list.length; i += dir){
+      if(f.list[i].done === f.item.done) return {f:f, target:i};
+      break;
+    }
+    return null;
+  }
+  function canMove(id, dir){ return !!neighbour(id, dir); }
+  function move(id, dir){
+    var n = neighbour(id, dir);
+    if(!n) return;
+    var l = n.f.list, a = n.f.index, b = n.target;
+    var tmp = l[a]; l[a] = l[b]; l[b] = tmp;
+    save();
+    render();
+  }
+
   function insertOpen(list, node){
     var pos = 0;
     while(pos < list.length && !list[pos].done) pos++;
@@ -331,9 +394,16 @@
     var h = '<li class="node" data-id="'+esc(it.id)+'">';
 
     if(edit && edit.id === it.id){
-      h += '<div class="edit">' + editorHTML(it.text, "")
-         +   '<button type="button" class="btn" data-act="save">Opslaan</button>'
-         +   '<button type="button" class="btn danger" data-act="del">Wissen</button>'
+      h += '<div class="edit open">' + editorHTML(it.text, "")
+         +   '<div class="edit-acts">'
+         +     '<button type="button" class="move" data-act="up" aria-label="Omhoog"'
+         +       (canMove(it.id, -1) ? "" : " disabled") + '>&#8593;</button>'
+         +     '<button type="button" class="move" data-act="down" aria-label="Omlaag"'
+         +       (canMove(it.id, 1) ? "" : " disabled") + '>&#8595;</button>'
+         +     '<span class="spacer"></span>'
+         +     '<button type="button" class="btn" data-act="save">Opslaan</button>'
+         +     '<button type="button" class="btn danger" data-act="del">Wissen</button>'
+         +   '</div>'
          + '</div>';
     }else{
       h += '<div class="row depth'+depth+(it.done ? " done" : "")+'" data-row="'+esc(it.id)+'">'
@@ -367,13 +437,11 @@
     h += '</ul>';
 
     if(!items.length && !(add && add.parent === null)){
-      h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik op <strong>Taak toevoegen</strong> om te beginnen.</p></div>';
+      h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik rechtsonder op <strong>+</strong> om te beginnen.</p></div>';
     }
     if(add && add.parent === null){
       h += '<div class="edit">' + editorHTML("", "Nieuwe taak")
          + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></div>';
-    }else{
-      h += '<button type="button" class="add" data-act="addroot"><span class="plus">+</span>Taak toevoegen</button>';
     }
 
     document.getElementById("app").innerHTML = h;
@@ -512,6 +580,16 @@
       return;
     }
     if(act === "edit"){ commitEdit(); edit = {id:id}; add = null; render(); return; }
+    if(act === "up" || act === "down"){
+      var ed = document.getElementById("editor");
+      if(ed && edit){                                   // getypte wijziging niet kwijtraken
+        var v = String(ed.value || "").slice(0, MAX_TEXT).trim();
+        var cur = find(edit.id);
+        if(cur && v) cur.item.text = v;
+      }
+      move(id, act === "up" ? -1 : 1);
+      return;
+    }
     if(act === "save" || act === "saveNew"){ commitEdit(); return; }
     if(act === "del"){
       f = find(id);
