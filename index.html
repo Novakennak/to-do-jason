@@ -437,11 +437,13 @@
     h += '</ul>';
 
     if(!items.length && !(add && add.parent === null)){
-      h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik rechtsonder op <strong>+</strong> om te beginnen.</p></div>';
+      h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik op <strong>Taak toevoegen</strong> om te beginnen.</p></div>';
     }
     if(add && add.parent === null){
       h += '<div class="edit">' + editorHTML("", "Nieuwe taak")
          + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></div>';
+    }else{
+      h += '<button type="button" class="add" data-act="addroot"><span class="plus">+</span>Taak toevoegen</button>';
     }
 
     document.getElementById("app").innerHTML = h;
