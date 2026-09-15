@@ -24,6 +24,7 @@
     --check:#5C6B2E;
     --warn:#8A3E22;
     --press:rgba(42,39,24,.08);
+    --l2:#C9AE5F; --l3:#A2B177; --l4:#CBA07C; --l5:#AFAE90;
     --field:rgba(255,255,255,.55);
     --bar:#2A2718;
     --bar-ink:#F7EFC9;
@@ -38,6 +39,7 @@
       --check:#B9C97E;
       --warn:#E8A183;
       --press:rgba(243,235,203,.1);
+      --l2:#5E5539; --l3:#4E5C3C; --l4:#614C3C; --l5:#4C4C3E;
       --field:rgba(255,255,255,.07);
       --bar:#3A352A;
       --bar-ink:#F3EBCB;
@@ -80,11 +82,30 @@
   }
 
   ul{list-style:none;margin:0;padding:0}
-  .kids{margin-left:18px;padding-left:14px;border-left:1px solid var(--rule)}
-  .kids .kids{margin-left:10px;padding-left:12px}
+  .kids{margin-left:8px;padding-left:12px;border-left:2px solid var(--rule)}
+  .kids.lvl2{border-color:var(--l2)}
+  .kids.lvl3{border-color:var(--l3)}
+  .kids.lvl4{border-color:var(--l4)}
+  .kids.lvl5{border-color:var(--l5)}
 
   .row{display:flex;align-items:flex-start;transition:transform .28s cubic-bezier(.2,.7,.3,1)}
   .row.flip{transition:none}
+
+  .fold{
+    flex:0 0 auto;width:30px;height:48px;border:0;background:none;padding:0;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;border-radius:8px;
+    color:var(--ink-soft);font-size:13px;line-height:1;
+  }
+  .fold:active{background:var(--press)}
+  .fold span{transition:transform .15s}
+  .fold.shut span{transform:rotate(-90deg)}
+  .fold.none{visibility:hidden}
+
+  .badge{
+    flex:0 0 auto;align-self:center;margin-right:2px;
+    font-size:13px;color:var(--ink-soft);background:var(--press);
+    border-radius:10px;padding:2px 8px;
+  }
 
   .box{
     flex:0 0 auto;width:46px;height:48px;border:0;background:none;padding:0;
@@ -108,7 +129,10 @@
     color:inherit;text-align:left;cursor:text;border-radius:8px;
   }
   .text:active{background:var(--press)}
-  .depth2 > .text,.depth3 > .text{font-size:16px}
+  .depth2 > .text,.depth3 > .text,.depth4 > .text,.depth5 > .text{font-size:16px}
+  .depth4 > .box,.depth5 > .box{width:38px}
+  .depth4 > .sub,.depth5 > .sub{width:38px}
+  .depth4 > .text,.depth5 > .text{padding-left:2px;padding-right:2px}
   .done > .text{color:var(--ink-soft);text-decoration:line-through;text-decoration-thickness:1px}
 
   .sub{
@@ -117,7 +141,7 @@
   }
   .sub:active{background:var(--press)}
 
-  .edit{display:flex;align-items:center;gap:6px;padding:4px 0 4px 46px}
+  .edit{display:flex;align-items:center;gap:6px;padding:4px 0 4px 30px}
   .kids .edit{padding-left:0}
   .edit.open{flex-direction:column;align-items:stretch;gap:2px}
   .edit-acts{display:flex;align-items:center;gap:2px}
@@ -238,7 +262,7 @@
   var KEY       = "todo-jason-v1";
   var STAMP     = "todo-jason-stamp";
   var BACKUP    = "todo-jason-backup";
-  var MAX_DEPTH = 3;     // hoofdtaak > subtaak > sub-subtaak, dieper kan niet
+  var MAX_DEPTH = 5;     // vijf lagen diep, daaronder stopt het
   var MAX_TEXT  = 500;
 
   var items = [];
@@ -281,7 +305,7 @@
       var id = (typeof raw.id === "string" && raw.id && !seen[raw.id]) ? raw.id : uid();
       seen[id] = true;
       var kids = clean(raw.children, depth + 1, seen);
-      var node = {id:id, text:text, done: raw.done === true, children: []};
+      var node = {id:id, text:text, done: raw.done === true, collapsed: raw.collapsed === true, children: []};
       out.push(node);
       if(depth < MAX_DEPTH) node.children = kids;
       else if(kids.length) out.push.apply(out, kids);              // te diep: zelfde niveau
@@ -389,8 +413,17 @@
          + ' autocomplete="off">';
   }
 
+  function openCount(it){
+    var n = 0;
+    each(it.children, function(k){ if(!k.done) n++; });
+    return n;
+  }
+
   function rowHTML(it, depth){
-    var canNest = depth < MAX_DEPTH;
+    var canNest  = depth < MAX_DEPTH;
+    var hasKids  = it.children.length > 0;
+    var opening  = add && add.parent === it.id;
+    var shut     = it.collapsed === true && hasKids && !opening;
     var h = '<li class="node" data-id="'+esc(it.id)+'">';
 
     if(edit && edit.id === it.id){
@@ -406,24 +439,26 @@
          +   '</div>'
          + '</div>';
     }else{
+      var hidden = shut ? openCount(it) : 0;
       h += '<div class="row depth'+depth+(it.done ? " done" : "")+'" data-row="'+esc(it.id)+'">'
+         +   '<button type="button" class="fold'+(hasKids ? (shut ? " shut" : "") : " none")+'"'
+         +     ' data-act="fold" aria-label="'+(shut ? "Subtaken tonen" : "Subtaken verbergen")+'"'
+         +     (hasKids ? "" : " tabindex=\"-1\"") + '><span>&#9660;</span></button>'
          +   '<button type="button" class="box" data-act="toggle" aria-label="Afvinken"><span></span></button>'
          +   '<button type="button" class="text" data-act="edit">'+esc(it.text)+'</button>'
+         +   (shut ? '<span class="badge" aria-label="'+hidden+' openstaande subtaken">'+hidden+'</span>' : "")
          +   (canNest ? '<button type="button" class="sub" data-act="addchild" aria-label="Subtaak toevoegen">+</button>' : "")
          + '</div>';
     }
 
-    if(canNest){
-      var open = add && add.parent === it.id;
-      if(it.children.length || open){
-        h += '<ul class="kids">';
-        it.children.forEach(function(k){ h += rowHTML(k, depth + 1); });
-        if(open){
-          h += '<li class="edit">' + editorHTML("", depth === 1 ? "Subtaak" : "Sub-subtaak")
-             + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></li>';
-        }
-        h += '</ul>';
+    if(canNest && !shut && (hasKids || opening)){
+      h += '<ul class="kids lvl'+(depth + 1)+'">';
+      it.children.forEach(function(k){ h += rowHTML(k, depth + 1); });
+      if(opening){
+        h += '<li class="edit">' + editorHTML("", "Subtaak")
+           + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></li>';
       }
+      h += '</ul>';
     }
     return h + '</li>';
   }
@@ -581,6 +616,17 @@
       });
       return;
     }
+    if(act === "fold"){
+      commitEdit();                       // openstaande invoer eerst afronden
+      f = find(id);
+      if(f && f.item.children.length){
+        if(!f.item.collapsed && add && add.parent === id) add = null;
+        f.item.collapsed = !f.item.collapsed;
+        save();
+        render();
+      }
+      return;
+    }
     if(act === "edit"){ commitEdit(); edit = {id:id}; add = null; render(); return; }
     if(act === "up" || act === "down"){
       var ed = document.getElementById("editor");
@@ -601,7 +647,12 @@
       }
       edit = null; save(); render(); return;
     }
-    if(act === "addchild"){ commitEdit(); add = {parent:id}; edit = null; render(); return; }
+    if(act === "addchild"){
+      commitEdit();
+      f = find(id);
+      if(f) f.item.collapsed = false;
+      add = {parent:id}; edit = null; render(); return;
+    }
     if(act === "addroot"){ commitEdit(); add = {parent:null}; edit = null; render(); return; }
   });
 
