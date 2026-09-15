@@ -139,6 +139,15 @@
   .deep > .text{padding-left:2px;padding-right:2px}
   .done > .text{color:var(--ink-soft);text-decoration:line-through;text-decoration-thickness:1px}
 
+  .slotlijst{margin-top:6px;padding-top:6px;border-top:1px dashed var(--rule)}
+  .slot{
+    flex:0 0 auto;width:46px;height:48px;border:0;background:none;padding:0;cursor:pointer;
+    font-size:20px;line-height:1;border-radius:10px;
+  }
+  .slot:active{background:var(--press)}
+  .row.dicht > .text{color:var(--ink-soft)}
+  .row.locker > .text{font-weight:500}
+
   .sub{
     flex:0 0 auto;width:46px;height:48px;border:0;background:none;padding:0;cursor:pointer;
     color:var(--check);font-size:24px;line-height:1;border-radius:10px;
@@ -200,18 +209,6 @@
     flex:0 0 auto;border:0;background:none;font:inherit;color:var(--bar-act);padding:6px 4px;cursor:pointer;
   }
 
-  .vaultkop{
-    display:flex;align-items:center;gap:10px;margin:22px 0 4px;padding-top:14px;
-    border-top:1px dashed var(--rule);color:var(--ink-soft);font-size:14px;
-  }
-  .vaultkop .slot{font-size:15px}
-  .vaultkop .titel{flex:1 1 auto}
-  .vaultkop button{
-    border:0;background:none;font:inherit;font-size:14px;color:var(--ink-soft);
-    text-decoration:underline;text-underline-offset:3px;padding:4px 2px;cursor:pointer;
-  }
-  .vaultkop .drop{text-decoration:none}
-
   .movebar{
     position:sticky;top:78px;z-index:6;display:flex;align-items:center;gap:10px;
     margin:0 0 10px;padding:10px 12px;border-radius:10px;
@@ -260,7 +257,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1 data-act="tap">To-Do&#39;s Jason</h1>
+    <h1>To-Do&#39;s Jason</h1>
     <div class="meta">
       <span class="count" id="count"></span>
       <span class="count" id="sync"></span>
@@ -294,7 +291,7 @@
     <p class="melding" id="pinMsg" style="margin:10px 0 0;color:var(--warn);font-size:14px;min-height:18px"></p>
     <div class="sheet-acts">
       <button type="button" data-act="pinCancel">Annuleren</button>
-      <button type="button" class="primary" data-act="pinOk" style="color:var(--check)">Openen</button>
+      <button type="button" class="primary" data-act="pinOk" style="color:var(--check)">Opslaan</button>
     </div>
   </div>
 </div>
@@ -343,12 +340,8 @@
   var pending   = false;   // nog niet naar Supabase gestuurd
   var pushTimer = null;
   var moving    = null;   // taak die op zoek is naar een nieuwe plek
-  var vaultItems = [];    // geheime lijst, alleen in het geheugen als hij open is
-  var vaultBlob  = null;  // versleutelde vorm zoals hij wordt opgeslagen
-  var vaultKey   = null;  // afgeleide sleutel, verdwijnt bij vergrendelen
-  var vaultOpen  = false;
-  var taps = 0, tapTimer = null;
-  var encRonde = 0;
+  var vaultOpen = false;    // staat de afgesloten map nu open?
+  var pinMode   = "open";   // "set" = wachtwoord kiezen, "open" = invoeren
 
   /* ---------- hulpjes die nooit mogen omvallen ---------- */
   function safe(fn, fallback){
@@ -381,6 +374,13 @@
       seen[id] = true;
       var kids = clean(raw.children, depth + 1, seen);
       var node = {id:id, text:text, done: raw.done === true, collapsed: raw.collapsed === true, children: []};
+      if(depth === 1 && raw.secret === true) node.secret = true;
+      if(depth === 1 && raw.locker === true && !seen.__kluis){
+        seen.__kluis = true;
+        node.locker = true;
+        node.pin = typeof raw.pin === "string" ? raw.pin : null;
+        delete node.secret;
+      }
       out.push(node);
       if(depth < MAX_DEPTH) node.children = kids;
       else if(kids.length) out.push.apply(out, kids);              // te diep: zelfde niveau
@@ -419,34 +419,22 @@
     stamp = safe(function(){ return parseInt(localStorage.getItem(STAMP), 10) || 0; }, 0);
   }
 
-  // oude opslag was een kale lijst, nieuwe heeft ook een geheim deel
+  // oudere opslag was een kale lijst; nieuwere is een omslag met de pincode erbij
   function unpack(raw){
-    if(Array.isArray(raw)){ items = clean(raw, 1, {}); vaultBlob = null; return; }
-    if(raw && typeof raw === "object"){
+    var oudePin = null;
+    if(Array.isArray(raw)) items = clean(raw, 1, {});
+    else if(raw && typeof raw === "object"){
       items = clean(raw.items, 1, {});
-      vaultBlob = (raw.vault && typeof raw.vault === "object") ? raw.vault : null;
-      return;
-    }
-    items = []; vaultBlob = null;
+      oudePin = typeof raw.pin === "string" ? raw.pin : null;   // wachtwoord uit een oudere versie
+    }else items = [];
+    zorgVoorKluis(oudePin);
   }
   function pack(){
-    return {v:2, items: items, vault: vaultBlob};
+    return {v:4, items: items};
   }
 
   function save(push){
     mem = items;
-    writeNow(push);
-    if(vaultOpen && vaultKey){
-      var mijn = ++encRonde;
-      encryptVault().then(function(blob){
-        if(mijn !== encRonde) return;          // een nieuwere versie is al onderweg
-        vaultBlob = blob;
-        writeNow(push);
-      }).catch(function(){});
-    }
-  }
-
-  function writeNow(push){
     var text = safe(function(){ return JSON.stringify(pack()); }, null);
     if(text === null) return;
     if(push !== false) stamp = Date.now();
@@ -461,39 +449,40 @@
     if(push !== false) queuePush();
   }
 
-  /* ---------- geheime lijst: versleutelen met een pincode ---------- */
-  function subtle(){
-    return safe(function(){ return window.crypto.subtle ? window.crypto : null; }, null);
+  /* ---------- de afgesloten map ---------- */
+  function kluis(){
+    for(var i = 0; i < items.length; i++) if(items[i].locker) return items[i];
+    return null;
   }
-  function b64(buf){
-    var bytes = new Uint8Array(buf), bin = "";
-    for(var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-    return btoa(bin);
-  }
-  function unb64(str){
-    var bin = atob(str), out = new Uint8Array(bin.length);
-    for(var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-  }
-  function deriveKey(pin, salt){
-    var c = subtle();
-    return c.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"])
-      .then(function(base){
-        return c.subtle.deriveKey(
-          {name:"PBKDF2", salt: salt, iterations: 150000, hash:"SHA-256"},
-          base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
-      });
-  }
-  function encryptVault(){
-    var c = subtle();
-    if(!c || !vaultKey) return Promise.reject(new Error("geen sleutel"));
-    var iv = c.getRandomValues(new Uint8Array(12));
-    var data = new TextEncoder().encode(JSON.stringify(vaultItems));
-    return c.subtle.encrypt({name:"AES-GCM", iv: iv}, vaultKey, data).then(function(buf){
-      return {s: vaultBlob && vaultBlob.s ? vaultBlob.s : null, i: b64(iv), c: b64(buf)};
-    });
+  function zorgVoorKluis(oudePin){
+    var k = kluis();
+    if(!k){
+      k = {id:uid(), text:"Prive", locker:true, pin:oudePin || null, children:[], collapsed:false};
+      items.push(k);
+    }else if(!k.pin && oudePin){
+      k.pin = oudePin;
+    }
+    // taken die in een oudere versie verborgen waren gaan mee naar binnen
+    for(var i = items.length - 1; i >= 0; i--){
+      if(items[i].secret && !items[i].locker){
+        var weg = items.splice(i, 1)[0];
+        delete weg.secret;
+        k.children.unshift(weg);
+      }
+    }
   }
 
+  /* ---------- wachtwoord ---------- */
+  function hashPin(pin){
+    var s = "to-do-jason:" + String(pin), h = 2166136261;
+    for(var r = 0; r < 20000; r++){
+      for(var i = 0; i < s.length; i++){
+        h = h ^ s.charCodeAt(i);
+        h = (h * 16777619) >>> 0;
+      }
+    }
+    return h.toString(16);
+  }
   /* ---------- zoeken en sorteren ---------- */
   function seek(list, id, depth){
     for(var i = 0; i < list.length; i++){
@@ -504,8 +493,7 @@
     return null;
   }
   function find(id, list, depth){
-    if(list) return seek(list, id, depth || 1);
-    return seek(items, id, 1) || (vaultOpen ? seek(vaultItems, id, 1) : null);
+    return seek(list || items, id, depth || 1);
   }
   function each(list, fn){
     list.forEach(function(it){ fn(it); each(it.children, fn); });
@@ -522,6 +510,7 @@
     var f = find(id);
     if(!f) return null;
     for(var i = f.index + dir; i >= 0 && i < f.list.length; i += dir){
+      if(f.list === items && f.list[i].locker) continue;      // de afgesloten map staat altijd onderaan
       if(f.list[i].done === f.item.done) return {f:f, target:i};
       break;
     }
@@ -561,14 +550,9 @@
     var src = moving ? find(moving) : null;
     return !!src && height(src.item) <= MAX_DEPTH;
   }
-  function drop(targetId, naarVault){
+  function drop(targetId){
     var src = find(moving);
     if(!src){ moving = null; render(); return; }
-    if(naarVault){
-      rememberFor("Taak verplaatst");
-      insertOpen(vaultItems, src.list.splice(src.index, 1)[0]);
-      moving = null; save(); render(); return;
-    }
     dropInto(targetId, src);
   }
   function dropInto(targetId, src){
@@ -578,6 +562,8 @@
     var node = src.list.splice(src.index, 1)[0];
     if(doel){
       doel.item.collapsed = false;
+      delete node.secret;
+      delete node.locker;
       insertOpen(doel.item.children, node);
     }else{
       insertOpen(items, node);
@@ -635,6 +621,7 @@
          +   '<button type="button" class="box" data-act="toggle" aria-label="Afvinken"><span></span></button>'
          +   '<button type="button" class="text" data-act="edit">'+esc(it.text)+'</button>'
          +   (shut ? '<span class="badge" aria-label="'+hidden+' openstaande subtaken">'+hidden+'</span>' : "")
+         +   (it.secret ? '<span class="badge" aria-label="verborgen taak">&#128274;</span>' : "")
          +   (moving
                ? (canDrop(it.id, depth) ? '<button type="button" class="drop" data-act="drop" aria-label="Hierin plaatsen">&#8627;</button>' : "")
                : (canNest ? '<button type="button" class="sub" data-act="addchild" aria-label="Subtaak toevoegen">+</button>' : ""))
@@ -654,16 +641,54 @@
     return h + '</li>';
   }
 
+  function lockerHTML(k){
+    var open = vaultOpen;
+    var h = '<li class="node" data-id="'+esc(k.id)+'">';
+    if(edit && edit.id === k.id){
+      return h + '<div class="edit open">' + editorHTML(k.text, "")
+        +   '<div class="edit-acts">'
+        +     '<button type="button" class="btn" data-act="repin">Wachtwoord wijzigen</button>'
+        +     '<span class="spacer"></span>'
+        +     '<button type="button" class="btn" data-act="save">Opslaan</button>'
+        +   '</div>'
+        + '</div></li>';
+    }
+    h += '<div class="row depth1 locker'+(open ? "" : " dicht")+'" data-row="'+esc(k.id)+'">'
+      +   '<button type="button" class="slot" data-act="toggleLock" aria-label="'
+      +     (open ? "Map sluiten" : "Map openen") + '">' + (open ? "&#128275;" : "&#128274;") + '</button>'
+      +   '<button type="button" class="text" data-act="edit">'+esc(k.text)+'</button>'
+      +   (open && k.children.length ? '<span class="badge">'+k.children.length+'</span>' : "")
+      +   (open
+            ? (moving
+                ? (canDrop(k.id, 1) ? '<button type="button" class="drop" data-act="drop" aria-label="Hierin plaatsen">&#8627;</button>' : "")
+                : '<button type="button" class="sub" data-act="addchild" aria-label="Taak toevoegen">+</button>')
+            : "")
+      + '</div>';
+    if(open){
+      h += '<ul class="kids lvl2">';
+      k.children.forEach(function(kind){ h += rowHTML(kind, 2); });
+      if(add && add.parent === k.id){
+        h += '<li class="edit">' + editorHTML("", "Taak")
+           + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></li>';
+      }
+      h += '</ul>';
+    }
+    return h + '</li>';
+  }
+
   function draw(){
+    var slot = kluis();
+    var toonbaar = items.filter(function(it){ return !it.locker; });
     var done = 0, total = 0;
-    each(items, function(it){ total++; if(it.done) done++; });
-    if(vaultOpen) each(vaultItems, function(it){ total++; if(it.done) done++; });
+    each(toonbaar, function(it){ total++; if(it.done) done++; });
+
+    if(slot && vaultOpen) each(slot.children, function(it){ total++; if(it.done) done++; });
 
     var h = '<ul>';
-    items.forEach(function(it){ h += rowHTML(it, 1); });
+    toonbaar.forEach(function(it){ h += rowHTML(it, 1); });
     h += '</ul>';
 
-    if(!items.length && !(add && add.parent === null) && !vaultOpen){
+    if(!toonbaar.length && !(add && add.parent === null)){
       h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik op <strong>Taak toevoegen</strong> om te beginnen.</p></div>';
     }
     if(add && add.parent === null){
@@ -672,24 +697,7 @@
     }else{
       h += '<button type="button" class="add" data-act="addroot"><span class="plus">+</span>Taak toevoegen</button>';
     }
-
-    if(vaultOpen){
-      h += '<div class="vaultkop">'
-         +   '<span class="slot">&#128274;</span>'
-         +   '<span class="titel">Geheime lijst</span>'
-         +   (moving && canDropRoot() ? '<button type="button" class="drop" data-act="dropVault" aria-label="Hierheen verplaatsen">&#8627;</button>' : "")
-         +   '<button type="button" data-act="lock">Vergrendelen</button>'
-         + '</div>';
-      h += '<ul>';
-      vaultItems.forEach(function(it){ h += rowHTML(it, 1); });
-      h += '</ul>';
-      if(add && add.parent === "__vault__"){
-        h += '<div class="edit">' + editorHTML("", "Geheime taak")
-           + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></div>';
-      }else{
-        h += '<button type="button" class="add" data-act="addvault"><span class="plus">+</span>Geheime taak toevoegen</button>';
-      }
-    }
+    if(slot) h += '<ul class="slotlijst">' + lockerHTML(slot) + '</ul>';
 
     document.getElementById("app").innerHTML = h;
     document.getElementById("count").textContent = total ? done + " van " + total + " klaar" : "";
@@ -753,7 +761,7 @@
 
   /* ---------- ongedaan maken ---------- */
   function rememberFor(label){
-    var snap = safe(function(){ return JSON.stringify({a: items, b: vaultItems}); }, null);
+    var snap = safe(function(){ return JSON.stringify(items); }, null);
     if(snap === null) return;
     undoState = {data:snap};
     var t = document.getElementById("undoText");
@@ -772,22 +780,19 @@
   function doUndo(){
     if(!undoState) return;
     var back = safe(function(){ return JSON.parse(undoState.data); }, null);
-    if(back){
-      items = clean(back.a, 1, {});
-      if(vaultOpen) vaultItems = clean(back.b, 1, {});
-    }
+    if(back) items = clean(back, 1, {});
     hideUndo();
     save();
     render();
   }
 
-  /* ---------- de verborgen lade ---------- */
-  function askPin(){
-    var c = subtle();
-    if(!c){ notice("Deze browser kan geen geheime lijst beveiligen."); return; }
-    document.getElementById("pinText").textContent = vaultBlob
-      ? "Voer je pincode in om de geheime lijst te openen."
-      : "Kies een pincode voor je geheime lijst. Vergeet hem niet: zonder pincode is de inhoud niet meer te openen.";
+  /* ---------- openen en sluiten ---------- */
+  function askPin(mode){
+    var k = kluis();
+    pinMode = mode;
+    document.getElementById("pinText").textContent = mode === "set"
+      ? "Kies een wachtwoord voor deze map. Zonder dit wachtwoord blijft hij dicht."
+      : "Wachtwoord om de map te openen.";
     document.getElementById("pinMsg").textContent = "";
     document.getElementById("pinKey").value = "";
     document.getElementById("pin").hidden = false;
@@ -799,47 +804,42 @@
     if(el) el.hidden = true;
     document.body.style.overflow = "";
   }
-  function openVault(){
-    var c = subtle();
-    var pin = String(document.getElementById("pinKey").value || "");
-    if(pin.length < 4){ document.getElementById("pinMsg").textContent = "Minimaal vier tekens."; return; }
-    document.getElementById("pinMsg").textContent = "Even geduld...";
-
-    if(!vaultBlob){                                        // eerste keer: lade aanmaken
-      var salt = c.getRandomValues(new Uint8Array(16));
-      deriveKey(pin, salt).then(function(k){
-        vaultKey = k; vaultItems = []; vaultOpen = true;
-        vaultBlob = {s: b64(salt), i: null, c: null};
-        closePin(); save(); render();
-      }).catch(function(){ document.getElementById("pinMsg").textContent = "Dat lukte niet."; });
+  function pinOk(){
+    var k = kluis();
+    var waarde = String(document.getElementById("pinKey").value || "").trim();
+    if(!k) return;
+    if(pinMode === "set"){
+      if(waarde.length < 3){ document.getElementById("pinMsg").textContent = "Minimaal drie tekens."; return; }
+      k.pin = hashPin(waarde);
+      vaultOpen = true;
+      closePin(); save(); render();
       return;
     }
-    deriveKey(pin, unb64(vaultBlob.s)).then(function(k){
-      if(!vaultBlob.c){                                     // lade bestaat maar is nog leeg
-        vaultKey = k; vaultItems = []; vaultOpen = true;
-        closePin(); render(); return;
-      }
-      return c.subtle.decrypt({name:"AES-GCM", iv: unb64(vaultBlob.i)}, k, unb64(vaultBlob.c))
-        .then(function(buf){
-          var lijst = JSON.parse(new TextDecoder().decode(buf));
-          vaultKey = k; vaultItems = clean(lijst, 1, {}); vaultOpen = true;
-          closePin(); render();
-        });
-    }).catch(function(){
-      document.getElementById("pinMsg").textContent = "Die pincode klopt niet.";
-    });
+    if(hashPin(waarde) !== k.pin){
+      document.getElementById("pinMsg").textContent = "Dat wachtwoord klopt niet.";
+      return;
+    }
+    vaultOpen = true;
+    closePin(); render();
   }
-  function lockVault(){
+  function toggleLock(){
+    var k = kluis();
+    if(!k) return;
+    if(!k.pin){ askPin("set"); return; }      // eerste keer: wachtwoord kiezen
+    if(vaultOpen){ sluitKluis(); return; }
+    askPin("open");
+  }
+  function sluitKluis(){
     if(!vaultOpen) return;
-    vaultOpen = false; vaultItems = []; vaultKey = null;
-    if(moving && !find(moving)) moving = null;
+    vaultOpen = false;
+    var k = kluis();
+    if(k){
+      if(moving && !find(moving, k.children)) { /* blijft geldig */ }
+      if(edit && find(edit.id, k.children)) edit = null;
+      if(add && add.parent && (add.parent === k.id || find(add.parent, k.children))) add = null;
+      if(moving && (moving === k.id || find(moving, k.children))) moving = null;
+    }
     render();
-  }
-  function tapTitle(){
-    taps++;
-    clearTimeout(tapTimer);
-    tapTimer = setTimeout(function(){ taps = 0; }, 1500);
-    if(taps >= 3){ taps = 0; if(vaultOpen) lockVault(); else askPin(); }
   }
 
   /* ---------- bewerken ---------- */
@@ -857,8 +857,6 @@
         var node = {id:uid(), text:val, done:false, children:[]};
         if(add.parent === null){
           insertOpen(items, node);
-        }else if(add.parent === "__vault__"){
-          insertOpen(vaultItems, node);
         }else{
           var p = find(add.parent);
           if(p && p.depth < MAX_DEPTH) insertOpen(p.item.children, node);
@@ -909,12 +907,10 @@
       return;
     }
     if(act === "cancelMove"){ moving = null; render(); return; }
-    if(act === "tap"){ tapTitle(); return; }
-    if(act === "lock"){ commitEdit(); lockVault(); return; }
+    if(act === "toggleLock"){ commitEdit(); toggleLock(); return; }
+    if(act === "repin"){ commitEdit(); askPin("set"); return; }
     if(act === "pinCancel"){ closePin(); return; }
-    if(act === "pinOk"){ openVault(); return; }
-    if(act === "dropVault"){ drop(null, true); return; }
-    if(act === "addvault"){ commitEdit(); add = {parent:"__vault__"}; edit = null; render(); return; }
+    if(act === "pinOk"){ pinOk(); return; }
     if(act === "drop"){ drop(id); return; }
     if(act === "dropRoot"){ drop(null); return; }
     if(act === "fold"){
@@ -961,7 +957,7 @@
     var pinSheet = document.getElementById("pin");
     if(pinSheet && !pinSheet.hidden){
       if(e.key === "Escape"){ e.preventDefault(); closePin(); }
-      if(e.key === "Enter" && e.target && e.target.id === "pinKey"){ e.preventDefault(); openVault(); }
+      if(e.key === "Enter" && e.target && e.target.id === "pinKey"){ e.preventDefault(); pinOk(); }
       return;
     }
     var sheet = document.getElementById("confirm");
@@ -976,8 +972,9 @@
 
   function countDone(){
     var n = 0;
-    each(items, function(it){ if(it.done) n++; });
-    if(vaultOpen) each(vaultItems, function(it){ if(it.done) n++; });
+    each(items.filter(function(it){ return !it.locker; }), function(it){ if(it.done) n++; });
+    var k = kluis();
+    if(k && vaultOpen) each(k.children, function(it){ if(it.done) n++; });
     return n;
   }
   function askClear(){
@@ -1000,21 +997,16 @@
   function clearDone(){
     if(!countDone()) return;
     rememberFor("Afgevinkte taken verwijderd");
-    (function strip(list){
+    (function strip(list, top){
       for(var i = list.length - 1; i >= 0; i--){
-        if(list[i].done) list.splice(i, 1);
-        else strip(list[i].children);
-      }
-      return strip;
-    })(items);
-    if(vaultOpen){
-      (function strip(list){
-        for(var i = list.length - 1; i >= 0; i--){
-          if(list[i].done) list.splice(i, 1);
-          else strip(list[i].children);
+        if(list[i].locker){                                  // de afgesloten map zelf blijft altijd
+          if(vaultOpen) strip(list[i].children, false);
+          continue;
         }
-      })(vaultItems);
-    }
+        if(list[i].done) list.splice(i, 1);
+        else strip(list[i].children, false);
+      }
+    })(items, true);
     save();
     render();
   }
@@ -1027,7 +1019,7 @@
     else save();
   }
   document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "hidden"){ stash(); if(pending) push(true); lockVault(); }
+    if(document.visibilityState === "hidden"){ stash(); if(pending) push(true); sluitKluis(); }
     else pull();
   });
   window.addEventListener("online", function(){ if(pending) push(); else pull(); });
@@ -1038,7 +1030,7 @@
     if(e.key !== KEY || document.getElementById("editor")) return;
     var next = safe(function(){ return JSON.parse(e.newValue); }, null);
     if(!next) return;
-    lockVault();                 // het geheime deel komt in versleutelde vorm binnen
+    sluitKluis();
     unpack(next);
     render();
   });
@@ -1078,7 +1070,7 @@
         var row = Array.isArray(rows) ? rows[0] : rows;
         var when = row && row.updated_at ? Date.parse(row.updated_at) : 0;
         if(row && when > stamp){
-          lockVault();
+          vaultOpen = false;                   // nieuwe gegevens: map weer op slot
           unpack(row.data);                    // de cloud is nieuwer
           stamp = when;
           save(false);
@@ -1184,7 +1176,7 @@
   document.addEventListener("keydown", function(e){
     if(!e.target) return;
     if(e.target.id === "gateKey" && e.key === "Enter"){ e.preventDefault(); unlock(); }
-    if(e.target.id === "pinKey" && e.key === "Enter"){ e.preventDefault(); openVault(); }
+    if(e.target.id === "pinKey" && e.key === "Enter"){ e.preventDefault(); pinOk(); }
   });
 
   (function begin(){
