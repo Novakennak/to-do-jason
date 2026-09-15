@@ -644,7 +644,7 @@
   function lockerHTML(k){
     var open = vaultOpen;
     var h = '<li class="node" data-id="'+esc(k.id)+'">';
-    if(edit && edit.id === k.id){
+    if(edit && edit.id === k.id && open){
       return h + '<div class="edit open">' + editorHTML(k.text, "")
         +   '<div class="edit-acts">'
         +     '<button type="button" class="btn" data-act="repin">Wachtwoord wijzigen</button>'
@@ -656,7 +656,7 @@
     h += '<div class="row depth1 locker'+(open ? "" : " dicht")+'" data-row="'+esc(k.id)+'">'
       +   '<button type="button" class="slot" data-act="toggleLock" aria-label="'
       +     (open ? "Map sluiten" : "Map openen") + '">' + (open ? "&#128275;" : "&#128274;") + '</button>'
-      +   '<button type="button" class="text" data-act="edit">'+esc(k.text)+'</button>'
+      +   '<button type="button" class="text" data-act="'+(open ? "edit" : "toggleLock")+'">'+esc(k.text)+'</button>'
       +   (open && k.children.length ? '<span class="badge">'+k.children.length+'</span>' : "")
       +   (open
             ? (moving
@@ -789,6 +789,7 @@
   /* ---------- openen en sluiten ---------- */
   function askPin(mode){
     var k = kluis();
+    if(mode === "set" && k && k.pin && !vaultOpen) mode = "open";   // nooit omzeilen
     pinMode = mode;
     document.getElementById("pinText").textContent = mode === "set"
       ? "Kies een wachtwoord voor deze map. Zonder dit wachtwoord blijft hij dicht."
@@ -908,7 +909,11 @@
     }
     if(act === "cancelMove"){ moving = null; render(); return; }
     if(act === "toggleLock"){ commitEdit(); toggleLock(); return; }
-    if(act === "repin"){ commitEdit(); askPin("set"); return; }
+    if(act === "repin"){
+      var k = kluis();
+      if(!k || (k.pin && !vaultOpen)) return;      // alleen met de map open
+      commitEdit(); askPin("set"); return;
+    }
     if(act === "pinCancel"){ closePin(); return; }
     if(act === "pinOk"){ pinOk(); return; }
     if(act === "drop"){ drop(id); return; }
@@ -924,7 +929,11 @@
       }
       return;
     }
-    if(act === "edit"){ commitEdit(); edit = {id:id}; add = null; render(); return; }
+    if(act === "edit"){
+      var kl = kluis();
+      if(kl && kl.id === id && !vaultOpen){ toggleLock(); return; }
+      commitEdit(); edit = {id:id}; add = null; render(); return;
+    }
     if(act === "up" || act === "down"){
       var ed = document.getElementById("editor");
       if(ed && edit){                                   // getypte wijziging niet kwijtraken
