@@ -200,6 +200,36 @@
     flex:0 0 auto;border:0;background:none;font:inherit;color:var(--bar-act);padding:6px 4px;cursor:pointer;
   }
 
+  .vaultkop{
+    display:flex;align-items:center;gap:10px;margin:22px 0 4px;padding-top:14px;
+    border-top:1px dashed var(--rule);color:var(--ink-soft);font-size:14px;
+  }
+  .vaultkop .slot{font-size:15px}
+  .vaultkop .titel{flex:1 1 auto}
+  .vaultkop button{
+    border:0;background:none;font:inherit;font-size:14px;color:var(--ink-soft);
+    text-decoration:underline;text-underline-offset:3px;padding:4px 2px;cursor:pointer;
+  }
+  .vaultkop .drop{text-decoration:none}
+
+  .movebar{
+    position:sticky;top:78px;z-index:6;display:flex;align-items:center;gap:10px;
+    margin:0 0 10px;padding:10px 12px;border-radius:10px;
+    background:var(--bar);color:var(--bar-ink);font-size:15px;
+  }
+  .movebar[hidden]{display:none}
+  .movebar .wat{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .movebar button{
+    flex:0 0 auto;border:0;background:none;font:inherit;font-size:15px;
+    color:var(--bar-act);padding:6px 4px;cursor:pointer;
+  }
+  .drop{
+    flex:0 0 auto;width:46px;height:48px;border:0;padding:0;cursor:pointer;border-radius:10px;
+    background:var(--press);color:var(--check);font-size:20px;line-height:1;
+  }
+  .drop:active{opacity:.6}
+  .deep > .drop{width:38px}
+
   .gate{max-width:420px;margin:40px auto;padding:0 6px;color:var(--ink)}
   .gate h2{margin:0 0 10px;font-size:20px;font-weight:500}
   .gate p{margin:0 0 18px;color:var(--ink-soft);font-size:15px}
@@ -230,7 +260,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>To-Do&#39;s Jason</h1>
+    <h1 data-act="tap">To-Do&#39;s Jason</h1>
     <div class="meta">
       <span class="count" id="count"></span>
       <span class="count" id="sync"></span>
@@ -238,6 +268,11 @@
     </div>
   </header>
   <p class="notice" id="notice" hidden></p>
+  <div class="movebar" id="movebar" hidden>
+    <span class="wat" id="moveWat"></span>
+    <button type="button" data-act="dropRoot">Hoofdlijst</button>
+    <button type="button" data-act="cancelMove">Stop</button>
+  </div>
   <div class="gate" id="gate" hidden>
     <h2>Deze lijst is afgeschermd</h2>
     <p>Open de persoonlijke link die je hebt gekregen, dan gaat de lijst vanzelf open.
@@ -251,6 +286,18 @@
   <main id="app"></main>
 </div>
 <button type="button" class="fab" id="fab" data-act="addroot" aria-label="Taak toevoegen">+</button>
+<div class="sheet" id="pin" hidden>
+  <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="pinText">
+    <p id="pinText"></p>
+    <input type="password" id="pinKey" inputmode="numeric" autocomplete="off"
+           placeholder="pincode" enterkeyhint="go">
+    <p class="melding" id="pinMsg" style="margin:10px 0 0;color:var(--warn);font-size:14px;min-height:18px"></p>
+    <div class="sheet-acts">
+      <button type="button" data-act="pinCancel">Annuleren</button>
+      <button type="button" class="primary" data-act="pinOk" style="color:var(--check)">Openen</button>
+    </div>
+  </div>
+</div>
 <div class="sheet" id="confirm" hidden>
   <div class="sheet-card" role="alertdialog" aria-modal="true" aria-labelledby="confirmText">
     <p id="confirmText"></p>
@@ -295,6 +342,12 @@
   var stamp     = 0;       // wanneer de lijst voor het laatst is gewijzigd
   var pending   = false;   // nog niet naar Supabase gestuurd
   var pushTimer = null;
+  var moving    = null;   // taak die op zoek is naar een nieuwe plek
+  var vaultItems = [];    // geheime lijst, alleen in het geheugen als hij open is
+  var vaultBlob  = null;  // versleutelde vorm zoals hij wordt opgeslagen
+  var vaultKey   = null;  // afgeleide sleutel, verdwijnt bij vergrendelen
+  var vaultOpen  = false;
+  var taps = 0, tapTimer = null;
 
   /* ---------- hulpjes die nooit mogen omvallen ---------- */
   function safe(fn, fallback){
@@ -361,13 +414,34 @@
                     : "De lijst kon niet gelezen worden en is opnieuw begonnen.");
       }
     }
-    items = clean(parsed, 1, {});
+    unpack(parsed);
     stamp = safe(function(){ return parseInt(localStorage.getItem(STAMP), 10) || 0; }, 0);
+  }
+
+  // oude opslag was een kale lijst, nieuwe heeft ook een geheim deel
+  function unpack(raw){
+    if(Array.isArray(raw)){ items = clean(raw, 1, {}); vaultBlob = null; return; }
+    if(raw && typeof raw === "object"){
+      items = clean(raw.items, 1, {});
+      vaultBlob = (raw.vault && typeof raw.vault === "object") ? raw.vault : null;
+      return;
+    }
+    items = []; vaultBlob = null;
+  }
+  function pack(){
+    return {v:2, items: items, vault: vaultBlob};
   }
 
   function save(push){
     mem = items;
-    var text = safe(function(){ return JSON.stringify(items); }, null);
+    writeNow(push);
+    if(vaultOpen && vaultKey){
+      encryptVault().then(function(blob){ vaultBlob = blob; writeNow(push); }).catch(function(){});
+    }
+  }
+
+  function writeNow(push){
+    var text = safe(function(){ return JSON.stringify(pack()); }, null);
     if(text === null) return;
     if(push !== false) stamp = Date.now();
     var ok = safe(function(){
@@ -381,15 +455,51 @@
     if(push !== false) queuePush();
   }
 
+  /* ---------- geheime lijst: versleutelen met een pincode ---------- */
+  function subtle(){
+    return safe(function(){ return window.crypto.subtle ? window.crypto : null; }, null);
+  }
+  function b64(buf){
+    var bytes = new Uint8Array(buf), bin = "";
+    for(var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+  }
+  function unb64(str){
+    var bin = atob(str), out = new Uint8Array(bin.length);
+    for(var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+  function deriveKey(pin, salt){
+    var c = subtle();
+    return c.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveKey"])
+      .then(function(base){
+        return c.subtle.deriveKey(
+          {name:"PBKDF2", salt: salt, iterations: 150000, hash:"SHA-256"},
+          base, {name:"AES-GCM", length:256}, false, ["encrypt","decrypt"]);
+      });
+  }
+  function encryptVault(){
+    var c = subtle();
+    if(!c || !vaultKey) return Promise.reject(new Error("geen sleutel"));
+    var iv = c.getRandomValues(new Uint8Array(12));
+    var data = new TextEncoder().encode(JSON.stringify(vaultItems));
+    return c.subtle.encrypt({name:"AES-GCM", iv: iv}, vaultKey, data).then(function(buf){
+      return {s: vaultBlob && vaultBlob.s ? vaultBlob.s : null, i: b64(iv), c: b64(buf)};
+    });
+  }
+
   /* ---------- zoeken en sorteren ---------- */
-  function find(id, list, depth){
-    list = list || items; depth = depth || 1;
+  function seek(list, id, depth){
     for(var i = 0; i < list.length; i++){
       if(list[i].id === id) return {list:list, index:i, item:list[i], depth:depth};
-      var hit = find(id, list[i].children, depth + 1);
+      var hit = seek(list[i].children, id, depth + 1);
       if(hit) return hit;
     }
     return null;
+  }
+  function find(id, list, depth){
+    if(list) return seek(list, id, depth || 1);
+    return seek(items, id, 1) || (vaultOpen ? seek(vaultItems, id, 1) : null);
   }
   function each(list, fn){
     list.forEach(function(it){ fn(it); each(it.children, fn); });
@@ -417,6 +527,56 @@
     if(!n) return;
     var l = n.f.list, a = n.f.index, b = n.target;
     var tmp = l[a]; l[a] = l[b]; l[b] = tmp;
+    save();
+    render();
+  }
+
+  // hoe hoog is de tak die we verplaatsen, en zit een doel er zelf in?
+  function height(it){
+    var h = 1;
+    it.children.forEach(function(k){ h = Math.max(h, 1 + height(k)); });
+    return h;
+  }
+  function inside(node, id){
+    var hit = false;
+    each(node.children, function(k){ if(k.id === id) hit = true; });
+    return hit;
+  }
+  function canDrop(targetId, targetDepth){
+    if(!moving) return false;
+    var src = find(moving);
+    if(!src) return false;
+    if(targetId === moving || inside(src.item, targetId)) return false;   // niet in zichzelf
+    var f = find(targetId);
+    if(f && f.item.children.indexOf(src.item) > -1) return false;         // staat er al in
+    return targetDepth + height(src.item) <= MAX_DEPTH;
+  }
+  function canDropRoot(){
+    var src = moving ? find(moving) : null;
+    return !!src && height(src.item) <= MAX_DEPTH;
+  }
+  function drop(targetId, naarVault){
+    var src = find(moving);
+    if(!src){ moving = null; render(); return; }
+    if(naarVault){
+      rememberFor("Taak verplaatst");
+      insertOpen(vaultItems, src.list.splice(src.index, 1)[0]);
+      moving = null; save(); render(); return;
+    }
+    dropInto(targetId, src);
+  }
+  function dropInto(targetId, src){
+    var doel = targetId ? find(targetId) : null;
+    if(targetId && !doel){ moving = null; render(); return; }
+    rememberFor("Taak verplaatst");
+    var node = src.list.splice(src.index, 1)[0];
+    if(doel){
+      doel.item.collapsed = false;
+      insertOpen(doel.item.children, node);
+    }else{
+      insertOpen(items, node);
+    }
+    moving = null;
     save();
     render();
   }
@@ -455,6 +615,7 @@
          +     '<button type="button" class="move" data-act="down" aria-label="Omlaag"'
          +       (canMove(it.id, 1) ? "" : " disabled") + '>&#8595;</button>'
          +     '<span class="spacer"></span>'
+         +     '<button type="button" class="btn" data-act="cut">Verplaatsen</button>'
          +     '<button type="button" class="btn" data-act="save">Opslaan</button>'
          +     '<button type="button" class="btn danger" data-act="del">Wissen</button>'
          +   '</div>'
@@ -468,7 +629,9 @@
          +   '<button type="button" class="box" data-act="toggle" aria-label="Afvinken"><span></span></button>'
          +   '<button type="button" class="text" data-act="edit">'+esc(it.text)+'</button>'
          +   (shut ? '<span class="badge" aria-label="'+hidden+' openstaande subtaken">'+hidden+'</span>' : "")
-         +   (canNest ? '<button type="button" class="sub" data-act="addchild" aria-label="Subtaak toevoegen">+</button>' : "")
+         +   (moving
+               ? (canDrop(it.id, depth) ? '<button type="button" class="drop" data-act="drop" aria-label="Hierin plaatsen">&#8627;</button>' : "")
+               : (canNest ? '<button type="button" class="sub" data-act="addchild" aria-label="Subtaak toevoegen">+</button>' : ""))
          + '</div>';
     }
 
@@ -488,12 +651,13 @@
   function draw(){
     var done = 0, total = 0;
     each(items, function(it){ total++; if(it.done) done++; });
+    if(vaultOpen) each(vaultItems, function(it){ total++; if(it.done) done++; });
 
     var h = '<ul>';
     items.forEach(function(it){ h += rowHTML(it, 1); });
     h += '</ul>';
 
-    if(!items.length && !(add && add.parent === null)){
+    if(!items.length && !(add && add.parent === null) && !vaultOpen){
       h += '<div class="empty"><p>Je lijst is leeg.</p><p>Tik op <strong>Taak toevoegen</strong> om te beginnen.</p></div>';
     }
     if(add && add.parent === null){
@@ -503,9 +667,36 @@
       h += '<button type="button" class="add" data-act="addroot"><span class="plus">+</span>Taak toevoegen</button>';
     }
 
+    if(vaultOpen){
+      h += '<div class="vaultkop">'
+         +   '<span class="slot">&#128274;</span>'
+         +   '<span class="titel">Geheime lijst</span>'
+         +   (moving && canDropRoot() ? '<button type="button" class="drop" data-act="dropVault" aria-label="Hierheen verplaatsen">&#8627;</button>' : "")
+         +   '<button type="button" data-act="lock">Vergrendelen</button>'
+         + '</div>';
+      h += '<ul>';
+      vaultItems.forEach(function(it){ h += rowHTML(it, 1); });
+      h += '</ul>';
+      if(add && add.parent === "__vault__"){
+        h += '<div class="edit">' + editorHTML("", "Geheime taak")
+           + '<button type="button" class="btn" data-act="saveNew">Toevoegen</button></div>';
+      }else{
+        h += '<button type="button" class="add" data-act="addvault"><span class="plus">+</span>Geheime taak toevoegen</button>';
+      }
+    }
+
     document.getElementById("app").innerHTML = h;
     document.getElementById("count").textContent = total ? done + " van " + total + " klaar" : "";
     document.getElementById("clear").hidden = done === 0;
+
+    var bar = document.getElementById("movebar");
+    if(bar){
+      bar.hidden = !moving;
+      if(moving){
+        var m = find(moving);
+        document.getElementById("moveWat").textContent = m ? "Kies de nieuwe plek voor: " + m.item.text : "";
+      }
+    }
 
     var ed = document.getElementById("editor");
     if(ed){
@@ -556,7 +747,7 @@
 
   /* ---------- ongedaan maken ---------- */
   function rememberFor(label){
-    var snap = safe(function(){ return JSON.stringify(items); }, null);
+    var snap = safe(function(){ return JSON.stringify({a: items, b: vaultItems}); }, null);
     if(snap === null) return;
     undoState = {data:snap};
     var t = document.getElementById("undoText");
@@ -575,10 +766,74 @@
   function doUndo(){
     if(!undoState) return;
     var back = safe(function(){ return JSON.parse(undoState.data); }, null);
-    if(back) items = clean(back, 1, {});
+    if(back){
+      items = clean(back.a, 1, {});
+      if(vaultOpen) vaultItems = clean(back.b, 1, {});
+    }
     hideUndo();
     save();
     render();
+  }
+
+  /* ---------- de verborgen lade ---------- */
+  function askPin(){
+    var c = subtle();
+    if(!c){ notice("Deze browser kan geen geheime lijst beveiligen."); return; }
+    document.getElementById("pinText").textContent = vaultBlob
+      ? "Voer je pincode in om de geheime lijst te openen."
+      : "Kies een pincode voor je geheime lijst. Vergeet hem niet: zonder pincode is de inhoud niet meer te openen.";
+    document.getElementById("pinMsg").textContent = "";
+    document.getElementById("pinKey").value = "";
+    document.getElementById("pin").hidden = false;
+    document.body.style.overflow = "hidden";
+    safe(function(){ document.getElementById("pinKey").focus(); });
+  }
+  function closePin(){
+    var el = document.getElementById("pin");
+    if(el) el.hidden = true;
+    document.body.style.overflow = "";
+  }
+  function openVault(){
+    var c = subtle();
+    var pin = String(document.getElementById("pinKey").value || "");
+    if(pin.length < 4){ document.getElementById("pinMsg").textContent = "Minimaal vier tekens."; return; }
+    document.getElementById("pinMsg").textContent = "Even geduld...";
+
+    if(!vaultBlob){                                        // eerste keer: lade aanmaken
+      var salt = c.getRandomValues(new Uint8Array(16));
+      deriveKey(pin, salt).then(function(k){
+        vaultKey = k; vaultItems = []; vaultOpen = true;
+        vaultBlob = {s: b64(salt), i: null, c: null};
+        closePin(); save(); render();
+      }).catch(function(){ document.getElementById("pinMsg").textContent = "Dat lukte niet."; });
+      return;
+    }
+    deriveKey(pin, unb64(vaultBlob.s)).then(function(k){
+      if(!vaultBlob.c){                                     // lade bestaat maar is nog leeg
+        vaultKey = k; vaultItems = []; vaultOpen = true;
+        closePin(); render(); return;
+      }
+      return c.subtle.decrypt({name:"AES-GCM", iv: unb64(vaultBlob.i)}, k, unb64(vaultBlob.c))
+        .then(function(buf){
+          var lijst = JSON.parse(new TextDecoder().decode(buf));
+          vaultKey = k; vaultItems = clean(lijst, 1, {}); vaultOpen = true;
+          closePin(); render();
+        });
+    }).catch(function(){
+      document.getElementById("pinMsg").textContent = "Die pincode klopt niet.";
+    });
+  }
+  function lockVault(){
+    if(!vaultOpen) return;
+    vaultOpen = false; vaultItems = []; vaultKey = null;
+    if(moving && !find(moving)) moving = null;
+    render();
+  }
+  function tapTitle(){
+    taps++;
+    clearTimeout(tapTimer);
+    tapTimer = setTimeout(function(){ taps = 0; }, 1500);
+    if(taps >= 3){ taps = 0; if(vaultOpen) lockVault(); else askPin(); }
   }
 
   /* ---------- bewerken ---------- */
@@ -596,6 +851,8 @@
         var node = {id:uid(), text:val, done:false, children:[]};
         if(add.parent === null){
           insertOpen(items, node);
+        }else if(add.parent === "__vault__"){
+          insertOpen(vaultItems, node);
         }else{
           var p = find(add.parent);
           if(p && p.depth < MAX_DEPTH) insertOpen(p.item.children, node);
@@ -638,6 +895,21 @@
       });
       return;
     }
+    if(act === "cut"){
+      commitEdit();
+      moving = id; edit = null; add = null;
+      render();
+      return;
+    }
+    if(act === "cancelMove"){ moving = null; render(); return; }
+    if(act === "tap"){ tapTitle(); return; }
+    if(act === "lock"){ commitEdit(); lockVault(); return; }
+    if(act === "pinCancel"){ closePin(); return; }
+    if(act === "pinOk"){ openVault(); return; }
+    if(act === "dropVault"){ drop(null, true); return; }
+    if(act === "addvault"){ commitEdit(); add = {parent:"__vault__"}; edit = null; render(); return; }
+    if(act === "drop"){ drop(id); return; }
+    if(act === "dropRoot"){ drop(null); return; }
     if(act === "fold"){
       commitEdit();                       // openstaande invoer eerst afronden
       f = find(id);
@@ -692,6 +964,7 @@
   function countDone(){
     var n = 0;
     each(items, function(it){ if(it.done) n++; });
+    if(vaultOpen) each(vaultItems, function(it){ if(it.done) n++; });
     return n;
   }
   function askClear(){
@@ -719,7 +992,16 @@
         if(list[i].done) list.splice(i, 1);
         else strip(list[i].children);
       }
+      return strip;
     })(items);
+    if(vaultOpen){
+      (function strip(list){
+        for(var i = list.length - 1; i >= 0; i--){
+          if(list[i].done) list.splice(i, 1);
+          else strip(list[i].children);
+        }
+      })(vaultItems);
+    }
     save();
     render();
   }
@@ -727,11 +1009,12 @@
   /* ---------- niets kwijtraken als de app naar de achtergrond gaat ---------- */
   function stash(){
     closeConfirm();
+    closePin();
     if(document.getElementById("editor")) commitEdit();
     else save();
   }
   document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState === "hidden"){ stash(); if(pending) push(true); }
+    if(document.visibilityState === "hidden"){ stash(); if(pending) push(true); lockVault(); }
     else pull();
   });
   window.addEventListener("online", function(){ if(pending) push(); else pull(); });
@@ -779,7 +1062,8 @@
         var row = Array.isArray(rows) ? rows[0] : rows;
         var when = row && row.updated_at ? Date.parse(row.updated_at) : 0;
         if(row && when > stamp){
-          items = clean(row.data, 1, {});      // de cloud is nieuwer
+          lockVault();
+          unpack(row.data);                    // de cloud is nieuwer
           stamp = when;
           save(false);
           render();
@@ -882,7 +1166,9 @@
     if(b) unlock();
   });
   document.addEventListener("keydown", function(e){
-    if(e.target && e.target.id === "gateKey" && e.key === "Enter"){ e.preventDefault(); unlock(); }
+    if(!e.target) return;
+    if(e.target.id === "gateKey" && e.key === "Enter"){ e.preventDefault(); unlock(); }
+    if(e.target.id === "pinKey" && e.key === "Enter"){ e.preventDefault(); openVault(); }
   });
 
   (function begin(){
