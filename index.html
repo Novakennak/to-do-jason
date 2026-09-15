@@ -348,6 +348,7 @@
   var vaultKey   = null;  // afgeleide sleutel, verdwijnt bij vergrendelen
   var vaultOpen  = false;
   var taps = 0, tapTimer = null;
+  var encRonde = 0;
 
   /* ---------- hulpjes die nooit mogen omvallen ---------- */
   function safe(fn, fallback){
@@ -436,7 +437,12 @@
     mem = items;
     writeNow(push);
     if(vaultOpen && vaultKey){
-      encryptVault().then(function(blob){ vaultBlob = blob; writeNow(push); }).catch(function(){});
+      var mijn = ++encRonde;
+      encryptVault().then(function(blob){
+        if(mijn !== encRonde) return;          // een nieuwere versie is al onderweg
+        vaultBlob = blob;
+        writeNow(push);
+      }).catch(function(){});
     }
   }
 
@@ -869,6 +875,7 @@
   /* ---------- klikken ---------- */
   document.addEventListener("click", function(e){
     if(e.target && e.target.id === "confirm"){ closeConfirm(); return; }   // naast het venster getikt
+    if(e.target && e.target.id === "pin"){ closePin(); return; }
     var btn = safe(function(){ return e.target.closest("[data-act]"); }, null);
     if(!btn){
       if(document.getElementById("editor") && !safe(function(){ return e.target.closest(".edit"); }, null)) commitEdit();
@@ -951,6 +958,12 @@
   });
 
   document.addEventListener("keydown", function(e){
+    var pinSheet = document.getElementById("pin");
+    if(pinSheet && !pinSheet.hidden){
+      if(e.key === "Escape"){ e.preventDefault(); closePin(); }
+      if(e.key === "Enter" && e.target && e.target.id === "pinKey"){ e.preventDefault(); openVault(); }
+      return;
+    }
     var sheet = document.getElementById("confirm");
     if(sheet && !sheet.hidden){
       if(e.key === "Escape"){ e.preventDefault(); closeConfirm(); }
@@ -1024,7 +1037,10 @@
   window.addEventListener("storage", function(e){
     if(e.key !== KEY || document.getElementById("editor")) return;
     var next = safe(function(){ return JSON.parse(e.newValue); }, null);
-    if(next){ items = clean(next, 1, {}); render(); }
+    if(!next) return;
+    lockVault();                 // het geheime deel komt in versleutelde vorm binnen
+    unpack(next);
+    render();
   });
 
   // laatste vangnet: liever een knop dan een wit scherm
@@ -1080,7 +1096,7 @@
     safe(function(){
       rpc("save_list", {
         p_key: CLOUD.list,
-        p_data: items,
+        p_data: pack(),            // gewone lijst plus het versleutelde geheime deel
         p_updated: new Date(stamp || Date.now()).toISOString()
       }, keepalive).then(function(){
         pending = false;
