@@ -200,6 +200,12 @@
     flex:0 0 auto;border:0;background:none;font:inherit;color:var(--bar-act);padding:6px 4px;cursor:pointer;
   }
 
+  .gate{max-width:420px;margin:40px auto;padding:0 6px;color:var(--ink)}
+  .gate h2{margin:0 0 10px;font-size:20px;font-weight:500}
+  .gate p{margin:0 0 18px;color:var(--ink-soft);font-size:15px}
+  .gate .rij{display:flex;gap:6px;align-items:center}
+  .gate .melding{margin-top:12px;color:var(--warn);font-size:15px;min-height:20px}
+
   .sheet{
     position:fixed;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;
     padding:20px;background:rgba(42,39,24,.42);
@@ -232,6 +238,16 @@
     </div>
   </header>
   <p class="notice" id="notice" hidden></p>
+  <div class="gate" id="gate" hidden>
+    <h2>Deze lijst is afgeschermd</h2>
+    <p>Open de persoonlijke link die je hebt gekregen, dan gaat de lijst vanzelf open.
+       Heb je die niet bij de hand, plak dan hieronder de sleutel.</p>
+    <div class="rij">
+      <input type="text" id="gateKey" placeholder="sleutel" autocomplete="off" enterkeyhint="go">
+      <button type="button" class="btn" data-act="unlock">Openen</button>
+    </div>
+    <p class="melding" id="gateMsg"></p>
+  </div>
   <main id="app"></main>
 </div>
 <button type="button" class="fab" id="fab" data-act="addroot" aria-label="Taak toevoegen">+</button>
@@ -259,12 +275,13 @@
   var CLOUD = {
     url:  "https://xtlwrppyuexpvzgykoli.supabase.co",
     key:  "sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw",
-    list: "01c75fe4-5f7c-4adb-834c-00a9b295ffa9"
+    list: ""    // komt uit de persoonlijke link, staat bewust niet in dit bestand
   };
   /* ================================================== */
 
   var KEY       = "todo-jason-v1";
   var STAMP     = "todo-jason-stamp";
+  var LISTKEY   = "todo-jason-sleutel";
   var BACKUP    = "todo-jason-backup";
   var MAX_DEPTH = 10;    // tien lagen diep, daaronder stopt het
   var MAX_TEXT  = 500;
@@ -812,10 +829,75 @@
     });
   });
 
-  load();
-  render();
-  syncStatus();
-  pull();
+  /* ---------- wie geen sleutel heeft, ziet geen lijst ---------- */
+  function keyFromUrl(){
+    var m = /[#?&]k=([A-Za-z0-9._~-]{8,120})/.exec(String(location.hash) + String(location.search));
+    return m ? m[1] : null;
+  }
+  function rememberKey(k){
+    safe(function(){ localStorage.setItem(LISTKEY, k); });
+  }
+  function storedKey(){
+    return safe(function(){ return localStorage.getItem(LISTKEY) || ""; }, "");
+  }
+  function showGate(msg){
+    document.getElementById("gate").hidden = false;
+    document.getElementById("app").hidden = true;
+    var fab = document.getElementById("fab");
+    if(fab) fab.hidden = true;
+    if(msg) document.getElementById("gateMsg").textContent = msg;
+    safe(function(){ document.getElementById("gateKey").focus(); });
+  }
+  function startApp(){
+    document.getElementById("gate").hidden = true;
+    document.getElementById("app").hidden = false;
+    var fab = document.getElementById("fab");
+    if(fab) fab.hidden = false;
+    load();
+    render();
+    syncStatus();
+    pull();
+  }
+  // een ingevoerde sleutel eerst controleren, zodat een typefout geen lege lijst oplevert
+  function unlock(){
+    var el = document.getElementById("gateKey");
+    var k = el ? String(el.value || "").trim() : "";
+    if(k.length < 8){ showGate("Vul de volledige sleutel in."); return; }
+    document.getElementById("gateMsg").textContent = "Even controleren...";
+    var was = CLOUD.list;
+    CLOUD.list = k;
+    safe(function(){
+      rpc("get_list", {p_key: k}).then(function(rows){
+        var row = Array.isArray(rows) ? rows[0] : rows;
+        if(row){ rememberKey(k); startApp(); }
+        else { CLOUD.list = was; showGate("Deze sleutel hoort niet bij een lijst."); }
+      }).catch(function(){
+        CLOUD.list = was;
+        showGate("Kan nu niet controleren. Check je verbinding en probeer opnieuw.");
+      });
+    });
+  }
+  document.addEventListener("click", function(e){
+    var b = safe(function(){ return e.target.closest('[data-act="unlock"]'); }, null);
+    if(b) unlock();
+  });
+  document.addEventListener("keydown", function(e){
+    if(e.target && e.target.id === "gateKey" && e.key === "Enter"){ e.preventDefault(); unlock(); }
+  });
+
+  (function begin(){
+    if(!CLOUD.url || !CLOUD.key){ startApp(); return; }   // zonder cloud gewoon lokaal werken
+    var fromUrl = keyFromUrl();
+    if(fromUrl){
+      rememberKey(fromUrl);
+      safe(function(){                                    // sleutel uit de adresbalk halen
+        history.replaceState(null, "", location.pathname);
+      });
+    }
+    CLOUD.list = storedKey();
+    if(CLOUD.list) startApp();
+    else showGate("");
+  })();
 })();
 </script>
 </body>
