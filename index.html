@@ -24,7 +24,7 @@
     --check:#5C6B2E;
     --warn:#8A3E22;
     --press:rgba(42,39,24,.08);
-    --l2:#C9AE5F; --l3:#A2B177; --l4:#CBA07C; --l5:#AFAE90;
+    --l2:#C9AE5F; --l3:#A2B177; --l4:#CBA07C; --l5:#AFAE90; --l6:#B59BB0;
     --field:rgba(255,255,255,.55);
     --bar:#2A2718;
     --bar-ink:#F7EFC9;
@@ -39,7 +39,7 @@
       --check:#B9C97E;
       --warn:#E8A183;
       --press:rgba(243,235,203,.1);
-      --l2:#5E5539; --l3:#4E5C3C; --l4:#614C3C; --l5:#4C4C3E;
+      --l2:#5E5539; --l3:#4E5C3C; --l4:#614C3C; --l5:#4C4C3E; --l6:#554457;
       --field:rgba(255,255,255,.07);
       --bar:#3A352A;
       --bar-ink:#F3EBCB;
@@ -59,6 +59,8 @@
   }
   button,input{touch-action:manipulation}
   .wrap{max-width:640px;margin:0 auto;padding:0 14px}
+  #app{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}
+  .row{min-width:290px}
 
   header{padding:26px 0 12px;position:sticky;top:0;background:var(--paper);z-index:5}
   h1{margin:0;font-size:30px;font-weight:500;letter-spacing:-.015em}
@@ -83,10 +85,12 @@
 
   ul{list-style:none;margin:0;padding:0}
   .kids{margin-left:8px;padding-left:12px;border-left:2px solid var(--rule)}
-  .kids.lvl2{border-color:var(--l2)}
-  .kids.lvl3{border-color:var(--l3)}
-  .kids.lvl4{border-color:var(--l4)}
-  .kids.lvl5{border-color:var(--l5)}
+  .kids.tight{margin-left:2px;padding-left:8px}
+  .kids.lvl2,.kids.lvl7 {border-color:var(--l2)}
+  .kids.lvl3,.kids.lvl8 {border-color:var(--l3)}
+  .kids.lvl4,.kids.lvl9 {border-color:var(--l4)}
+  .kids.lvl5,.kids.lvl10{border-color:var(--l5)}
+  .kids.lvl6,.kids.lvl11{border-color:var(--l6)}
 
   .row{display:flex;align-items:flex-start;transition:transform .28s cubic-bezier(.2,.7,.3,1)}
   .row.flip{transition:none}
@@ -129,10 +133,10 @@
     color:inherit;text-align:left;cursor:text;border-radius:8px;
   }
   .text:active{background:var(--press)}
-  .depth2 > .text,.depth3 > .text,.depth4 > .text,.depth5 > .text{font-size:16px}
-  .depth4 > .box,.depth5 > .box{width:38px}
-  .depth4 > .sub,.depth5 > .sub{width:38px}
-  .depth4 > .text,.depth5 > .text{padding-left:2px;padding-right:2px}
+  .row:not(.depth1) > .text{font-size:16px}
+  .deep > .box,.deep > .sub{width:38px}
+  .deep > .fold{width:26px}
+  .deep > .text{padding-left:2px;padding-right:2px}
   .done > .text{color:var(--ink-soft);text-decoration:line-through;text-decoration-thickness:1px}
 
   .sub{
@@ -262,7 +266,7 @@
   var KEY       = "todo-jason-v1";
   var STAMP     = "todo-jason-stamp";
   var BACKUP    = "todo-jason-backup";
-  var MAX_DEPTH = 5;     // vijf lagen diep, daaronder stopt het
+  var MAX_DEPTH = 10;    // tien lagen diep, daaronder stopt het
   var MAX_TEXT  = 500;
 
   var items = [];
@@ -440,7 +444,7 @@
          + '</div>';
     }else{
       var hidden = shut ? openCount(it) : 0;
-      h += '<div class="row depth'+depth+(it.done ? " done" : "")+'" data-row="'+esc(it.id)+'">'
+      h += '<div class="row depth'+depth+(depth > 3 ? " deep" : "")+(it.done ? " done" : "")+'" data-row="'+esc(it.id)+'">'
          +   '<button type="button" class="fold'+(hasKids ? (shut ? " shut" : "") : " none")+'"'
          +     ' data-act="fold" aria-label="'+(shut ? "Subtaken tonen" : "Subtaken verbergen")+'"'
          +     (hasKids ? "" : " tabindex=\"-1\"") + '><span>&#9660;</span></button>'
@@ -452,7 +456,8 @@
     }
 
     if(canNest && !shut && (hasKids || opening)){
-      h += '<ul class="kids lvl'+(depth + 1)+'">';
+      var lvl = depth + 1;
+      h += '<ul class="kids lvl'+lvl+(lvl >= 5 ? " tight" : "")+'">';
       it.children.forEach(function(k){ h += rowHTML(k, depth + 1); });
       if(opening){
         h += '<li class="edit">' + editorHTML("", "Subtaak")
