@@ -1,0 +1,26 @@
+# Houdt het Supabase-project wakker. Gratis projecten gaan na 7 dagen zonder
+# verzoeken op pauze; deze workflow doet er elke drie dagen een.
+name: Supabase wakker houden
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *"     # elke drie dagen, 's ochtends
+  workflow_dispatch:            # en met een knop in het tabblad Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Een verzoek naar de database sturen
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "https://xtlwrppyuexpvzgykoli.supabase.co/rest/v1/rpc/get_list" \
+            -H "apikey: sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw" \
+            -H "Authorization: Bearer sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw" \
+            -H "Content-Type: application/json" \
+            -d '{"p_key":"wakker-houden"}')
+          echo "Antwoord van Supabase: $code"
+          if [ "$code" != "200" ]; then
+            echo "Geen geldig antwoord. Project mogelijk gepauzeerd of sleutel gewijzigd."
+            exit 1
+          fi
