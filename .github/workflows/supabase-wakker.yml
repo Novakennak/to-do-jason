@@ -1,26 +1,56 @@
-# Houdt het Supabase-project wakker. Gratis projecten gaan na 7 dagen zonder
-# verzoeken op pauze; deze workflow doet er elke drie dagen een.
+# Houdt het Supabase-project wakker. Gratis projecten gaan op pauze na een week
+# zonder voldoende databaseactiviteit. Deze workflow doet elke dag een echte
+# lees- en schrijfactie op de database.
 name: Supabase wakker houden
 
 on:
   schedule:
-    - cron: "17 6 */3 * *"     # elke drie dagen, 's ochtends
-  workflow_dispatch:            # en met een knop in het tabblad Actions
+    - cron: "17 6 * * *"      # elke dag, 's ochtends
+  workflow_dispatch:           # en met een knop in het tabblad Actions
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Een verzoek naar de database sturen
+      - name: Database aanspreken
+        env:
+          URL: "https://xtlwrppyuexpvzgykoli.supabase.co"
+          KEY: "sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw"
         run: |
-          code=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "https://xtlwrppyuexpvzgykoli.supabase.co/rest/v1/rpc/get_list" \
-            -H "apikey: sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw" \
-            -H "Authorization: Bearer sb_publishable_6pRc7BsZ0pexcVwx51WvwQ__YVx5SHw" \
+          set -u
+          fout=0
+
+          # 1. schemaverzoek: PostgREST leest hiervoor de database uit
+          rest=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$URL/rest/v1/" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY")
+          echo "Schemaverzoek   : $rest"
+          [ "$rest" = "200" ] || fout=1
+
+          # 2. echte leesactie via de eigen functie
+          lees=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$URL/rest/v1/rpc/get_list" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
             -H "Content-Type: application/json" \
             -d '{"p_key":"wakker-houden"}')
-          echo "Antwoord van Supabase: $code"
-          if [ "$code" != "200" ]; then
-            echo "Geen geldig antwoord. Project mogelijk gepauzeerd of sleutel gewijzigd."
+          echo "Leesactie       : $lees"
+          [ "$lees" = "200" ] || fout=1
+
+          # 3. echte schrijfactie op een eigen regel, los van de lijst van Jason
+          nu=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          schrijf=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$URL/rest/v1/rpc/save_list" \
+            -H "apikey: $KEY" \
+            -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"p_key\":\"wakker-houden\",\"p_data\":[],\"p_updated\":\"$nu\"}")
+          echo "Schrijfactie    : $schrijf"
+          [ "$schrijf" = "200" ] || fout=1
+
+          if [ "$fout" != "0" ]; then
+            echo "Niet alles gaf 200. Project mogelijk gepauzeerd of sleutel gewijzigd."
             exit 1
           fi
+          echo "Database is aangesproken."
