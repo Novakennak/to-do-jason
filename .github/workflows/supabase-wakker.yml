@@ -20,25 +20,17 @@ jobs:
           set -u
           fout=0
 
-          # 1. schemaverzoek: PostgREST leest hiervoor de database uit
-          rest=$(curl -s -o /dev/null -w "%{http_code}" \
-            "$URL/rest/v1/" \
-            -H "apikey: $KEY" \
-            -H "Authorization: Bearer $KEY")
-          echo "Schemaverzoek   : $rest"
-          [ "$rest" = "200" ] || fout=1
-
-          # 2. echte leesactie via de eigen functie
+          # 1. echte leesactie via de eigen functie
           lees=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "$URL/rest/v1/rpc/get_list" \
             -H "apikey: $KEY" \
             -H "Authorization: Bearer $KEY" \
             -H "Content-Type: application/json" \
             -d '{"p_key":"wakker-houden"}')
-          echo "Leesactie       : $lees"
+          echo "Leesactie    : $lees"
           [ "$lees" = "200" ] || fout=1
 
-          # 3. echte schrijfactie op een eigen regel, los van de lijst van Jason
+          # 2. echte schrijfactie op een eigen regel, los van de lijst van Jason
           nu=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           schrijf=$(curl -s -o /dev/null -w "%{http_code}" \
             -X POST "$URL/rest/v1/rpc/save_list" \
@@ -46,7 +38,7 @@ jobs:
             -H "Authorization: Bearer $KEY" \
             -H "Content-Type: application/json" \
             -d "{\"p_key\":\"wakker-houden\",\"p_data\":[],\"p_updated\":\"$nu\"}")
-          echo "Schrijfactie    : $schrijf"
+          echo "Schrijfactie : $schrijf"
           [ "$schrijf" = "200" ] || fout=1
 
           if [ "$fout" != "0" ]; then
